@@ -23,9 +23,7 @@ go.work.sum
 
 # env file
 .env
-<<<<<<< HEAD
-=======
 
 # toml file
 .toml
->>>>>>> 1d49b0c (Initial commit)
+MakeFile
