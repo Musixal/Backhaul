@@ -1,0 +1,13 @@
+[client] # Remote, behind NAT, firewall-blocked
+remote_addr = "0.0.0.0:3080" # Server address and port (mandatory).
+transport = "ws"             # Protocol ("tcp" or "tcpmux" or "ws", optional, default: "tcp").
+token = "your_token"         # Authentication token (optional).
+nodelay = false              # Use TCP_NODELAY (optional, default: false).
+retry_interval = 1           # Retry interval in seconds (optional, default: 1).
+log_level = "info"           # Log level ("panic", "fatal", "error", "warn", "info", "debug", "trace", optional, default: "info").
+mux_session = 2              # Number of mux sessions for tcpmux.  (optional, default: 1).
+
+forwarder = [ # Forward incoming connection to another address. optional.
+    "4000=IP:PORT",
+    "4001=127.0.0.1:9090",
+]
