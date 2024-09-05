@@ -124,9 +124,15 @@ You can configure the `server` and `client` to use different transport protocols
    ```
 * **Details**:
 
-   `channel_size`: Adjust for high traffic. Determines how many connections the server will handle concurrently.
+   `remote_addr`: The IPv4, IPv6, or domain address of the server to which the client connects.
 
-   `connection_pool`: Set the number of pre-established connections for better throughput.
+   `token`: An authentication token used to securely validate and authenticate the connection between the client and server within the tunnel.
+
+   `channel_size`: The queue size for forwarding packets from server to the client. If the limit is exceeded, packets will be dropped.
+
+   `connection_pool`: Set the number of pre-established connections for better latency.
+   
+   `nodelay`: Refers to a TCP socket option (TCP_NODELAY) that improve the latency but decrease the bandwidth
 
 #### TCP Multiplexing Configuration
 * **Server**:
@@ -152,6 +158,9 @@ You can configure the `server` and `client` to use different transport protocols
 * **Details**:
 
    `mux_session`: Number of multiplexed sessions. Increase this if you need to handle more simultaneous sessions over a single connection.
+   
+   * Refer to TCP configuration for more information.
+
 
 #### WebSocket Configuration
 * **Server**:
@@ -178,7 +187,7 @@ You can configure the `server` and `client` to use different transport protocols
 
 * **Details**:
 
-   `channel_size`: Same as TCP, determines the maximum number of concurrent connections.
+   * Refer to TCP configuration for more information.
 
 
 ## FAQ
