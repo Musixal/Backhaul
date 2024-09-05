@@ -225,6 +225,10 @@ sudo systemctl start backhaul.service
 ```bash
 sudo systemctl status backhaul.service
 ```
+4. view the most recent log entries for the backhaul.service unit:
+```bash
+journalctl -u backhaul.service -e -f
+```
 
 ## FAQ
 
