@@ -234,9 +234,6 @@ sudo systemctl status backhaul.service
 * `tcpmux`: Use if you need to handle multiple sessions over a single connection.
 * `ws`: Use if you need to traverse HTTP-based firewalls or proxies.
 
-**Q: How can I optimize performance for high traffic?**
-
-Increase the `channel_size` for TCP and WebSocket, and configure an appropriate `connection_pool` for TCP. For tcpmux, adjust the `mux_session` parameter.
 
 
 ## License
