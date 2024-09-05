@@ -1,0 +1,25 @@
+# .goreleaser.yml
+
+project_name: backhaul 
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    main: ./main.go
+    ldflags: "-s -w"
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+release:
+  github:
+    owner: musixal
+    name: backhaul
