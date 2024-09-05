@@ -167,6 +167,9 @@ func (s *TcpTransport) TunnelListener() {
 					}
 				}
 
+				tcpConn.SetKeepAlive(true)
+				tcpConn.SetKeepAlivePeriod(30 * time.Second)
+
 				select {
 				case s.tunnelChannel <- conn:
 					s.logger.Debugf("accepted incoming tunnel TCP connection from %s", tcpConn.RemoteAddr().String())

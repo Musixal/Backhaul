@@ -15,6 +15,7 @@ type ServerConfig struct {
 	Transport      TransportType `toml:"transport"`
 	Token          string        `toml:"token"`
 	Nodelay        bool          `toml:"nodelay"`
+	Keepalive      int           `toml:"keepalive_period"`
 	ChannelSize    int           `toml:"channel_size"`
 	LogLevel       string        `toml:"log_level"`
 	ConnectionPool int           `toml:"connection_pool"`
@@ -30,6 +31,7 @@ type ClientConfig struct {
 	Token         string        `toml:"token"`
 	RetryInterval int           `toml:"retry_interval"`
 	Nodelay       bool          `toml:"nodelay"`
+	Keepalive     int           `toml:"keepalive_period"`
 	LogLevel      string        `toml:"log_level"`
 	MuxSession    int           `toml:"mux_session"`
 	Forwarder     []string      `toml:"forwarder"`

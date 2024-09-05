@@ -22,7 +22,6 @@ type WsTransport struct {
 	logger         *logrus.Logger
 	controlChannel *websocket.Conn
 	timeout        time.Duration
-	keepalive      time.Duration
 	restartMutex   sync.Mutex
 	heartbeatSig   string
 	chanSignal     string
@@ -30,7 +29,8 @@ type WsTransport struct {
 type WsConfig struct {
 	RemoteAddr    string
 	Nodelay       bool
-	RetryInterval int
+	KeepAlive     time.Duration
+	RetryInterval time.Duration
 	Token         string
 	Forwarder     map[int]string
 }
@@ -47,9 +47,8 @@ func NewWSClient(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 		logger:         logger,
 		controlChannel: nil,             // will be set when a control connection is established
 		timeout:        5 * time.Second, // Default timeout
-		keepalive:      8 * time.Second,
-		heartbeatSig:   "0", // Default heartbeat signal
-		chanSignal:     "1", // Default channel signal
+		heartbeatSig:   "0",             // Default heartbeat signal
+		chanSignal:     "1",             // Default channel signal
 
 	}
 
@@ -92,7 +91,7 @@ func (c *WsTransport) ChannelDialer() {
 			tunnelWSConn, err := c.wsDialer(c.config.RemoteAddr, "/channel")
 			if err != nil {
 				c.logger.Error(err)
-				time.Sleep(time.Duration(c.config.RetryInterval) * time.Second)
+				time.Sleep(c.config.RetryInterval * time.Second)
 				continue
 			}
 			c.controlChannel = tunnelWSConn
@@ -207,8 +206,8 @@ func (c *WsTransport) wsDialer(addr string, path string) (*websocket.Conn, error
 				return nil, err
 			}
 			tcpConn := conn.(*net.TCPConn)
-			tcpConn.SetKeepAlive(true)              // Enable TCP keepalive
-			tcpConn.SetKeepAlivePeriod(c.keepalive) // Set keepalive period
+			tcpConn.SetKeepAlive(true)                     // Enable TCP keepalive
+			tcpConn.SetKeepAlivePeriod(c.config.KeepAlive) // Set keepalive period
 			return tcpConn, nil
 		},
 	}
@@ -232,8 +231,8 @@ func (c *WsTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPConn, 
 
 	// options
 	dialer := &net.Dialer{
-		Timeout:   c.timeout,   // Set the connection timeout
-		KeepAlive: c.keepalive, // Set the keep-alive duration
+		Timeout:   c.timeout,          // Set the connection timeout
+		KeepAlive: c.config.KeepAlive, // Set the keep-alive duration
 	}
 
 	// Dial the TCP connection with a timeout

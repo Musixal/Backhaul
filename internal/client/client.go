@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"time"
 
 	"github.com/musix/backhaul/internal/utils"
 
@@ -49,7 +50,8 @@ func (c *Client) Start() {
 		tcpConfig := &transport.TcpConfig{
 			RemoteAddr:    c.config.RemoteAddr,
 			Nodelay:       c.config.Nodelay,
-			RetryInterval: c.config.RetryInterval,
+			KeepAlive:     time.Duration(c.config.Keepalive),
+			RetryInterval: time.Duration(c.config.RetryInterval),
 			Token:         c.config.Token,
 			Forwarder:     c.forwarderReader(c.config.Forwarder),
 		}
@@ -60,10 +62,12 @@ func (c *Client) Start() {
 		tcpMuxConfig := &transport.TcpMuxConfig{
 			RemoteAddr:    c.config.RemoteAddr,
 			Nodelay:       c.config.Nodelay,
-			RetryInterval: c.config.RetryInterval,
+			KeepAlive:     time.Duration(c.config.Keepalive),
+			RetryInterval: time.Duration(c.config.RetryInterval),
 			Token:         c.config.Token,
 			MuxSession:    c.config.MuxSession,
-			Forwarder:     c.forwarderReader(c.config.Forwarder),
+
+			Forwarder: c.forwarderReader(c.config.Forwarder),
 		}
 		tcpMuxClient := transport.NewMuxClient(c.ctx, tcpMuxConfig, c.logger)
 		go tcpMuxClient.MuxDialer()
@@ -72,7 +76,8 @@ func (c *Client) Start() {
 		WsConfig := &transport.WsConfig{
 			RemoteAddr:    c.config.RemoteAddr,
 			Nodelay:       c.config.Nodelay,
-			RetryInterval: c.config.RetryInterval,
+			KeepAlive:     time.Duration(c.config.Keepalive),
+			RetryInterval: time.Duration(c.config.RetryInterval),
 			Token:         c.config.Token,
 			Forwarder:     c.forwarderReader(c.config.Forwarder),
 		}
