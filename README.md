@@ -29,15 +29,18 @@ This project offers a robust reverse tunneling solution to overcome NAT and fire
 ## Installation
 
 1. **Download** the latest release from the [GitHub releases page](https://github.com/musixal/backhaul/releases).
-2. **Extract** the archive (adjust the `filename` if needed):
+2. **Extract** the archive (adjust the `filename` if needed):  
+
    ```bash
-   tar -xf backhaul_linux_amd64.tar.gz
+   tar -xzf backhaul_linux_amd64.tar.gz
    ``` 
-3. **Run** the executable:
+3. **Run** the executable:  
+
    ```bash
    ./backhaul
    ```
-4. You can also build from source if preferred.
+4. You can also build from source if preferred:  
+
    ```bash
    git clone https://github.com/musixal/backhaul.git
    cd backhaul
