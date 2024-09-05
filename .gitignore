@@ -22,10 +22,11 @@ go.work.sum
 .env
 
 # toml file
-.toml
+*.toml
 
 # Makefile
 MakeFile
 
 #MacOS
 .DS_Store
+.vscode
