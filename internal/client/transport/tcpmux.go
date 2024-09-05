@@ -21,13 +21,13 @@ type TcpMuxTransport struct {
 	smuxSession  []*smux.Session
 	restartMutex sync.Mutex
 	timeout      time.Duration
-	keepalive    time.Duration
 }
 
 type TcpMuxConfig struct {
 	RemoteAddr    string
 	Nodelay       bool
-	RetryInterval int
+	KeepAlive     time.Duration
+	RetryInterval time.Duration
 	Token         string
 	MuxSession    int
 	Forwarder     map[int]string
@@ -44,7 +44,6 @@ func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logru
 		cancel:      cancel,
 		logger:      logger,
 		smuxSession: make([]*smux.Session, config.MuxSession),
-		keepalive:   8 * time.Second,
 	}
 
 	return client
@@ -88,7 +87,7 @@ func (c *TcpMuxTransport) MuxDialer() {
 				tunnelTCPConn, err := c.tcpDialer(c.config.RemoteAddr, c.config.Nodelay)
 				if err != nil {
 					c.logger.Error("failed to dial tunnel server: ", err)
-					time.Sleep(time.Duration(c.config.RetryInterval) * time.Second)
+					time.Sleep(c.config.RetryInterval * time.Second)
 					continue
 				}
 
@@ -165,8 +164,8 @@ func (c *TcpMuxTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPCo
 
 	// options
 	dialer := &net.Dialer{
-		Timeout:   c.timeout,   // Set the connection timeout
-		KeepAlive: c.keepalive, // Set the keep-alive duration
+		Timeout:   c.timeout,          // Set the connection timeout
+		KeepAlive: c.config.KeepAlive, // Set the keep-alive duration
 	}
 
 	// Dial the TCP connection with a timeout
