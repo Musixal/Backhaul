@@ -15,9 +15,10 @@ Welcome to the **`Backhaul`** project! This project provides a high-performance 
       - [TCP Configuration](#tcp-configuration)
       - [TCP Multiplexing Configuration](#tcp-multiplexing-configuration)
       - [WebSocket Configuration](#websocket-configuration)
-5. [Running backhaul as a service](#running-backhaul-as-a-service)
+4. [Running backhaul as a service](#running-backhaul-as-a-service)
 5. [FAQ](#faq)
 6. [License](#license)
+7. [Donation](#donation)
 
 ---
 
