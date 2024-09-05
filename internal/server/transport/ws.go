@@ -35,6 +35,7 @@ type WsTransport struct {
 type WsConfig struct {
 	BindAddr       string
 	Nodelay        bool
+	KeepAlive      time.Duration
 	ConnectionPool int
 	Token          string
 	ChannelSize    int
@@ -295,6 +296,8 @@ func (s *WsTransport) acceptLocConn(listener net.Listener, acceptChan chan net.C
 					s.logger.Tracef("TCP_NODELAY enabled successfully for %s", tcpConn.RemoteAddr().String())
 				}
 			}
+			tcpConn.SetKeepAlive(true)
+			tcpConn.SetKeepAlivePeriod(s.config.KeepAlive)
 
 			if len(s.tunnelChannel) < s.config.ConnectionPool {
 				s.getNewConnChan <- struct{}{}

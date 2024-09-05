@@ -29,6 +29,7 @@ type TcpMuxTransport struct {
 type TcpMuxConfig struct {
 	BindAddr    string
 	Nodelay     bool
+	KeepAlive   time.Duration
 	Token       string
 	MuxSession  int
 	ChannelSize int
@@ -263,6 +264,9 @@ func (s *TcpMuxTransport) localListener(localPort int, remotePort int) {
 						s.logger.Tracef("TCP_NODELAY enabled successfully for %s", tcpConn.RemoteAddr().String())
 					}
 				}
+
+				tcpConn.SetKeepAlive(true)
+				tcpConn.SetKeepAlivePeriod(s.config.KeepAlive)
 
 				select {
 				case acceptChan <- tcpConn:

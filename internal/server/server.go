@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	_ "net/http/pprof"
+	"time"
 
 	"github.com/musix/backhaul/internal/config"
 	"github.com/musix/backhaul/internal/server/transport"
@@ -42,6 +43,7 @@ func (s *Server) Start() {
 		tcpConfig := &transport.TcpConfig{
 			BindAddr:       s.config.BindAddr,
 			Nodelay:        s.config.Nodelay,
+			KeepAlive:      time.Duration(s.config.Keepalive),
 			ConnectionPool: s.config.ConnectionPool,
 			Token:          s.config.Token,
 			ChannelSize:    s.config.ChannelSize,
@@ -55,6 +57,7 @@ func (s *Server) Start() {
 		tcpMuxConfig := &transport.TcpMuxConfig{
 			BindAddr:    s.config.BindAddr,
 			Nodelay:     s.config.Nodelay,
+			KeepAlive:   time.Duration(s.config.Keepalive),
 			Token:       s.config.Token,
 			MuxSession:  s.config.MuxSession,
 			ChannelSize: s.config.ChannelSize,
@@ -68,6 +71,7 @@ func (s *Server) Start() {
 		wsConfig := &transport.WsConfig{
 			BindAddr:       s.config.BindAddr,
 			Nodelay:        s.config.Nodelay,
+			KeepAlive:      time.Duration(s.config.Keepalive),
 			ConnectionPool: s.config.ConnectionPool,
 			Token:          s.config.Token,
 			ChannelSize:    s.config.ChannelSize,

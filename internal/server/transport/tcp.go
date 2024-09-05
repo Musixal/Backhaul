@@ -32,6 +32,7 @@ type TcpTransport struct {
 type TcpConfig struct {
 	BindAddr       string
 	Nodelay        bool
+	KeepAlive      time.Duration
 	ConnectionPool int
 	Token          string
 	ChannelSize    int
@@ -168,7 +169,7 @@ func (s *TcpTransport) TunnelListener() {
 				}
 
 				tcpConn.SetKeepAlive(true)
-				tcpConn.SetKeepAlivePeriod(30 * time.Second)
+				tcpConn.SetKeepAlivePeriod(s.config.KeepAlive)
 
 				select {
 				case s.tunnelChannel <- conn:
