@@ -45,7 +45,7 @@ To start using the solution, you'll need to configure both server and client com
    Create a configuration file named `config.toml`:
 
     ```toml
-    [server]
+    [server]# Local, IRAN
     bind_addr = "0.0.0.0:3080" # Address and port for the server to listen (mandatory).
     transport = "tcp"          # Protocol ("tcp", "tcpmux", or "ws", optional, default: "tcp").
     token = "your_token"       # Authentication token (optional).
@@ -71,7 +71,7 @@ To start using the solution, you'll need to configure both server and client com
 
    Create a configuration file named `config.toml` for the client:
    ```toml
-   [client]
+   [client]  # Behind NAT, firewall-blocked
    remote_addr = "0.0.0.0:3080" # Server address and port (mandatory).
    transport = "tcp"            # Protocol ("tcp", "tcpmux", or "ws", optional, default: "tcp").
    token = "your_token"         # Authentication token (optional).
@@ -106,7 +106,7 @@ You can configure the `server` and `client` to use different transport protocols
 * **Server**:
 
    ```toml
-   [server]
+   [server] # 
    bind_addr = "0.0.0.0:3080"
    transport = "tcp"
    token = "your_token" 
@@ -207,7 +207,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/root/backhaul -c config.toml
+ExecStart=/root/backhaul -c /root/config.toml
 Restart=always
 RestartSec=3
 LimitNOFILE=1048576
