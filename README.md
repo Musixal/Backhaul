@@ -15,9 +15,9 @@ Welcome to the **`Backhaul`** project! This project provides a high-performance 
       - [TCP Configuration](#tcp-configuration)
       - [TCP Multiplexing Configuration](#tcp-multiplexing-configuration)
       - [WebSocket Configuration](#websocket-configuration)
-
-4. [FAQ](#faq)
-5. [License](#license)
+5. [Running backhaul as a service](#running-backhaul-as-a-service)
+5. [FAQ](#faq)
+6. [License](#license)
 
 ---
 
@@ -190,6 +190,39 @@ You can configure the `server` and `client` to use different transport protocols
    * Refer to TCP configuration for more information.
 
 
+## Running backhaul as a service
+
+To create a service file for your backhaul project that ensures the service restarts automatically, you can use the following template for a systemd service file. Assuming your project runs a reverse tunnel and the main executable file is located in a certain path, here's a basic example:
+
+1. Create the service file `/etc/systemd/system/backhaul.service`:
+
+```ini
+[Unit]
+Description=Backhaul Reverse Tunnel Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/root/backhaul -c config.toml
+Restart=always
+RestartSec=3
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+```
+2. After creating the service file, enable and start the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable backhaul.service
+sudo systemctl start backhaul.service
+```
+3. To verify if the service is running:
+```bash
+sudo systemctl status backhaul.service
+```
+
 ## FAQ
 
 **Q: How do I decide which transport protocol to use?**
@@ -208,4 +241,7 @@ Increase the `channel_size` for TCP and WebSocket, and configure an appropriate 
 This project is licensed under the MIT License. See the LICENSE file for details.
 
 ## Donation
-...
+
+   <a href="https://nowpayments.io/donation?api_key=6Z16MRY-AF14Y8T-J24TXVS-00RDKK7&source=lk_donation&medium=referral" target="_blank">
+     <img src="https://nowpayments.io/images/embeds/donation-button-white.svg" alt="Crypto donation button by NOWPayments">
+    </a>
