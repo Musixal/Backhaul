@@ -14,6 +14,7 @@ const ( // Default values
 	defaultConnectionPool = 8
 	defaultLogLevel       = "info"
 	defaultMuxSession     = 1
+	defaultKeepAlive      = 20
 )
 
 func applyDefaults(cfg *config.Config) {
@@ -80,4 +81,11 @@ func applyDefaults(cfg *config.Config) {
 
 	// PPROF default is false if not valid value found
 
+	// keep alive
+	if cfg.Server.Keepalive <= 0 {
+		cfg.Server.Keepalive = defaultKeepAlive
+	}
+	if cfg.Client.Keepalive <= 0 {
+		cfg.Client.Keepalive = defaultKeepAlive
+	}
 }
