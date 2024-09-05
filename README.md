@@ -65,7 +65,7 @@ To start using the solution, you'll need to configure both server and client com
    To start the `server`:
 
    ```sh
-   backhaul -c config.toml
+   ./backhaul -c config.toml
    ```
 * **Client Configuration**
 
@@ -90,7 +90,7 @@ To start using the solution, you'll need to configure both server and client com
    To start the `client`:
 
    ```sh
-   backhaul -c config.toml
+   ./backhaul -c config.toml
    ```
 
 ### Detailed Configuration
