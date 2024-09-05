@@ -241,7 +241,7 @@ Increase the `channel_size` for TCP and WebSocket, and configure an appropriate 
 
 ## License
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+This project is licensed under the AGPL-3.0 license. See the LICENSE file for details.
 
 ## Donation
 
