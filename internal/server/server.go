@@ -43,7 +43,7 @@ func (s *Server) Start() {
 		tcpConfig := &transport.TcpConfig{
 			BindAddr:       s.config.BindAddr,
 			Nodelay:        s.config.Nodelay,
-			KeepAlive:      time.Duration(s.config.Keepalive),
+			KeepAlive:      time.Duration(s.config.Keepalive) * time.Second,
 			ConnectionPool: s.config.ConnectionPool,
 			Token:          s.config.Token,
 			ChannelSize:    s.config.ChannelSize,
@@ -57,7 +57,7 @@ func (s *Server) Start() {
 		tcpMuxConfig := &transport.TcpMuxConfig{
 			BindAddr:    s.config.BindAddr,
 			Nodelay:     s.config.Nodelay,
-			KeepAlive:   time.Duration(s.config.Keepalive),
+			KeepAlive:   time.Duration(s.config.Keepalive) * time.Second,
 			Token:       s.config.Token,
 			MuxSession:  s.config.MuxSession,
 			ChannelSize: s.config.ChannelSize,
@@ -71,7 +71,7 @@ func (s *Server) Start() {
 		wsConfig := &transport.WsConfig{
 			BindAddr:       s.config.BindAddr,
 			Nodelay:        s.config.Nodelay,
-			KeepAlive:      time.Duration(s.config.Keepalive),
+			KeepAlive:      time.Duration(s.config.Keepalive) * time.Second,
 			ConnectionPool: s.config.ConnectionPool,
 			Token:          s.config.Token,
 			ChannelSize:    s.config.ChannelSize,

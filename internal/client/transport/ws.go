@@ -91,7 +91,7 @@ func (c *WsTransport) ChannelDialer() {
 			tunnelWSConn, err := c.wsDialer(c.config.RemoteAddr, "/channel")
 			if err != nil {
 				c.logger.Error(err)
-				time.Sleep(c.config.RetryInterval * time.Second)
+				time.Sleep(c.config.RetryInterval)
 				continue
 			}
 			c.controlChannel = tunnelWSConn

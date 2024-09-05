@@ -50,8 +50,8 @@ func (c *Client) Start() {
 		tcpConfig := &transport.TcpConfig{
 			RemoteAddr:    c.config.RemoteAddr,
 			Nodelay:       c.config.Nodelay,
-			KeepAlive:     time.Duration(c.config.Keepalive),
-			RetryInterval: time.Duration(c.config.RetryInterval),
+			KeepAlive:     time.Duration(c.config.Keepalive) * time.Second,
+			RetryInterval: time.Duration(c.config.RetryInterval) * time.Second,
 			Token:         c.config.Token,
 			Forwarder:     c.forwarderReader(c.config.Forwarder),
 		}
@@ -62,8 +62,8 @@ func (c *Client) Start() {
 		tcpMuxConfig := &transport.TcpMuxConfig{
 			RemoteAddr:    c.config.RemoteAddr,
 			Nodelay:       c.config.Nodelay,
-			KeepAlive:     time.Duration(c.config.Keepalive),
-			RetryInterval: time.Duration(c.config.RetryInterval),
+			KeepAlive:     time.Duration(c.config.Keepalive) * time.Second,
+			RetryInterval: time.Duration(c.config.RetryInterval) * time.Second,
 			Token:         c.config.Token,
 			MuxSession:    c.config.MuxSession,
 
@@ -76,8 +76,8 @@ func (c *Client) Start() {
 		WsConfig := &transport.WsConfig{
 			RemoteAddr:    c.config.RemoteAddr,
 			Nodelay:       c.config.Nodelay,
-			KeepAlive:     time.Duration(c.config.Keepalive),
-			RetryInterval: time.Duration(c.config.RetryInterval),
+			KeepAlive:     time.Duration(c.config.Keepalive) * time.Second,
+			RetryInterval: time.Duration(c.config.RetryInterval) * time.Second,
 			Token:         c.config.Token,
 			Forwarder:     c.forwarderReader(c.config.Forwarder),
 		}

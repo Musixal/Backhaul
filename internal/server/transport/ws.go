@@ -116,24 +116,25 @@ func (s *WsTransport) portConfigReader() {
 }
 
 func (s *WsTransport) heartbeat() {
+	ticker := time.NewTicker(s.heartbeatDuration)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
-		default:
+		case <-ticker.C:
 			if s.controlChannel == nil {
+				go s.Restart()
 				return
 			}
-			s.mu.Lock()
 			err := s.controlChannel.WriteMessage(websocket.TextMessage, []byte(s.heartbeatSig))
-			s.mu.Unlock()
 			if err != nil {
 				s.logger.Error("unable to send heartbeat. restarting server...")
 				go s.Restart()
 				return
 			}
 			s.logger.Debug("heartbeat sent successfully")
-			time.Sleep(s.heartbeatDuration * time.Second)
 		}
 	}
 }

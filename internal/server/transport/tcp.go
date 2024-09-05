@@ -227,12 +227,16 @@ func (s *TcpTransport) channelListener() {
 }
 
 func (s *TcpTransport) heartbeat() {
+	ticker := time.NewTicker(s.heartbeatDuration)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
-		default:
+		case <-ticker.C:
 			if s.controlChannel == nil {
+				go s.Restart()
 				return
 			}
 			err := utils.SendBinaryString(s.controlChannel, s.heartbeatSig)
@@ -241,12 +245,11 @@ func (s *TcpTransport) heartbeat() {
 				go s.Restart()
 				return
 			}
-			s.logger.Debug("heartbeat sended successfully")
-			time.Sleep(s.heartbeatDuration * time.Second)
+			s.logger.Debug("heartbeat sent successfully")
 		}
 	}
-
 }
+
 func (s *TcpTransport) poolChecker() {
 	for {
 		select {

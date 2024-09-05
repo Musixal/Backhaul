@@ -44,6 +44,7 @@ func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logru
 		cancel:      cancel,
 		logger:      logger,
 		smuxSession: make([]*smux.Session, config.MuxSession),
+		timeout:     5 * time.Second, // Default timeout
 	}
 
 	return client
@@ -87,7 +88,7 @@ func (c *TcpMuxTransport) MuxDialer() {
 				tunnelTCPConn, err := c.tcpDialer(c.config.RemoteAddr, c.config.Nodelay)
 				if err != nil {
 					c.logger.Error("failed to dial tunnel server: ", err)
-					time.Sleep(c.config.RetryInterval * time.Second)
+					time.Sleep(c.config.RetryInterval)
 					continue
 				}
 

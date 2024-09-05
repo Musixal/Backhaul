@@ -87,7 +87,7 @@ func (c *TcpTransport) ChannelDialer() {
 			tunnelTCPConn, err := c.tcpDialer(c.config.RemoteAddr, c.config.Nodelay)
 			if err != nil {
 				c.logger.Error(err)
-				time.Sleep(c.config.RetryInterval * time.Second)
+				time.Sleep(c.config.RetryInterval)
 				continue
 			}
 
@@ -111,7 +111,7 @@ func (c *TcpTransport) ChannelDialer() {
 					c.logger.Error("unable to establish new control channel")
 				}
 				tunnelTCPConn.Close() // Close connection on error or timeout
-				time.Sleep(c.config.RetryInterval* time.Second)
+				time.Sleep(c.config.RetryInterval)
 				continue
 			}
 
@@ -125,7 +125,7 @@ func (c *TcpTransport) ChannelDialer() {
 			} else {
 				c.logger.Error("invalid token received, retrying...")
 				tunnelTCPConn.Close() // Close connection if the token is invalid
-				time.Sleep(c.config.RetryInterval * time.Second)
+				time.Sleep(c.config.RetryInterval)
 				continue
 			}
 		}
