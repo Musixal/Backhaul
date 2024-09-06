@@ -251,6 +251,7 @@ func (s *WsTransport) TunnelListener() {
 }
 
 func (s *WsTransport) localListener(localPort int, remotePort int) {
+	s.logger.Debugf("starting listener on local port %d -> remote port %d", localPort, remotePort)
 	addr := fmt.Sprintf(":%d", localPort)
 	portListener, err := net.Listen("tcp", addr)
 	if err != nil {

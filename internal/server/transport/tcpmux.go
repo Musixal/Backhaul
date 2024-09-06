@@ -223,6 +223,7 @@ func (s *TcpMuxTransport) acceptStreamConn(listener net.Listener, id int, wg *sy
 }
 
 func (s *TcpMuxTransport) localListener(localPort int, remotePort int) {
+	s.logger.Debugf("starting listener on local port %d -> remote port %d", localPort, remotePort)
 	addr := fmt.Sprintf("0.0.0.0:%d", localPort)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {

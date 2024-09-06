@@ -291,6 +291,7 @@ func (s *TcpTransport) getNewConnection() {
 }
 
 func (s *TcpTransport) localListener(localPort int, remotePort int) {
+	s.logger.Debugf("starting listener on local port %d -> remote port %d", localPort, remotePort)
 	addr := fmt.Sprintf(":%d", localPort)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
