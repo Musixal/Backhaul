@@ -29,3 +29,10 @@ func ParsePortRange(s string) []int {
 	}
 	return []int{port}
 }
+
+func Min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

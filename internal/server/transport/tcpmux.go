@@ -90,7 +90,7 @@ func (s *TcpMuxTransport) portConfigReader() {
 			}
 			localPorts, remotePorts := utils.ParsePortRange(parts[0]), utils.ParsePortRange(parts[1])
 			for i := range localPorts {
-				go s.localListener(localPorts[i], remotePorts[min(i, len(remotePorts)-1)])
+				go s.localListener(localPorts[i], remotePorts[utils.Min(i, len(remotePorts)-1)])
 			}
 		} else if strings.Contains(portMapping, ":") {
 			// Handle "[1000:1003]" format
