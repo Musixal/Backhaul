@@ -91,26 +91,32 @@ func (s *TcpTransport) Restart() {
 func (s *TcpTransport) portConfigReader() {
 	// port mapping for listening on each local port
 	for _, portMapping := range s.config.Ports {
-		parts := strings.Split(portMapping, "=")
-		if len(parts) != 2 {
-			s.logger.Fatalf("invalid port mapping: %s", portMapping)
-			continue
+		if strings.Contains(portMapping, "=") {
+			// Handle "443=443" format
+			parts := strings.Split(portMapping, "=")
+			if len(parts) != 2 {
+				s.logger.Fatalf("invalid port mapping: %s", portMapping)
+				continue
+			}
+			localPorts, remotePorts := utils.ParsePortRange(parts[0]), utils.ParsePortRange(parts[1])
+			for i := range localPorts {
+				go s.localListener(localPorts[i], remotePorts[min(i, len(remotePorts)-1)])
+			}
+		} else if strings.Contains(portMapping, ":") {
+			// Handle "[1000:1003]" format
+			ports := utils.ParsePortRange(portMapping)
+			for _, port := range ports {
+				go s.localListener(port, port)
+			}
+		} else {
+			// Handle "443" format
+			port, err := strconv.Atoi(portMapping)
+			if err != nil {
+				s.logger.Fatalf("invalid port: %s", portMapping)
+				continue
+			}
+			go s.localListener(port, port)
 		}
-
-		localPortStr := strings.TrimSpace(parts[0])
-		localPort, err := strconv.Atoi(localPortStr)
-		if err != nil {
-			s.logger.Fatalf("invalid local port in mapping: %s", localPortStr)
-			continue
-		}
-
-		remotePortStr := strings.TrimSpace(parts[1])
-		remotePort, err := strconv.Atoi(remotePortStr)
-		if err != nil {
-			s.logger.Fatalf("invalid remote port in mapping: %s", remotePortStr)
-			continue
-		}
-		go s.localListener(localPort, remotePort)
 	}
 }
 

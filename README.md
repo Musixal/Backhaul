@@ -75,6 +75,9 @@ To start using the solution, you'll need to configure both server and client com
     ports = [ # Local to remote port mapping in this format LocalPort=RemotePort (mandatory).
         "4000=5201",
         "4001=5201",
+        "4003", # Local and remote port are the same.
+        "[4004:4006]", # port range. it's equal to "4004=4004", "4005=4005", "4006=4006"
+        "[4007:4009]=5201", # port range. it's equal to "4007=5201", "4008=5201", "4009=5201"
     ]
     ```
 
