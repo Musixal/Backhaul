@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -81,31 +82,42 @@ func (s *TcpMuxTransport) Restart() {
 func (s *TcpMuxTransport) portConfigReader() {
 	// port mapping for listening on each local port
 	for _, portMapping := range s.config.Ports {
+		var re = regexp.MustCompile(`(?m)^(?:(?:\[(\d+):(\d+)\](?:=(\d+))?)|(?:(\d+)(?::(\d+))?(?:=(\d+))?))$`)
+		if !re.MatchString(portMapping) {
+			s.logger.Fatalf("invalid port mapping: %s", portMapping)
+			continue
+		}
+		var groups = re.FindStringSubmatch(portMapping)
+		var validGroups []int
+		for i := 1; i < len(groups); i++ {
+			if groups[i] != "" {
+				var num, _ = strconv.Atoi(groups[i])
+				validGroups = append(validGroups, num)
+			}
+		}
+		var remotePort = -1
+		var startRange = validGroups[0]
+		var endRange = startRange
 		if strings.Contains(portMapping, "=") {
-			// Handle "443=443" format
-			parts := strings.Split(portMapping, "=")
-			if len(parts) != 2 {
-				s.logger.Fatalf("invalid port mapping: %s", portMapping)
-				continue
-			}
-			localPorts, remotePorts := utils.ParsePortRange(parts[0]), utils.ParsePortRange(parts[1])
-			for i := range localPorts {
-				go s.localListener(localPorts[i], remotePorts[utils.Min(i, len(remotePorts)-1)])
-			}
-		} else if strings.Contains(portMapping, ":") {
-			// Handle "[1000:1003]" format
-			ports := utils.ParsePortRange(portMapping)
-			for _, port := range ports {
-				go s.localListener(port, port)
+			remotePort = validGroups[len(validGroups)-1]
+			if len(validGroups) == 3 {
+				endRange = validGroups[1]
 			}
 		} else {
-			// Handle "443" format
-			port, err := strconv.Atoi(portMapping)
-			if err != nil {
-				s.logger.Fatalf("invalid port: %s", portMapping)
-				continue
+			if len(validGroups) == 2 {
+				endRange = validGroups[1]
 			}
-			go s.localListener(port, port)
+		}
+		if startRange > endRange {
+			s.logger.Warnf("Invalid range: %d %d", startRange, endRange)
+		} else {
+			for i := startRange; i <= endRange; i++ {
+				if remotePort == -1 {
+					go s.localListener(i, i)
+				} else {
+					go s.localListener(i, remotePort)
+				}
+			}
 		}
 	}
 }
