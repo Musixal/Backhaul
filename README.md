@@ -68,7 +68,7 @@ To start using the solution, you'll need to configure both server and client com
     keepalive_period = 20      # Specify keep-alive period in seconds. (optional, default: 20 seconds)
     nodelay = false            # Enable TCP_NODELAY (optional, default: false).
     channel_size = 2048        # Tunnel channel size. Excess connections are discarded. Only for tcp and ws mode (optional, default: 2048).
-    connection_pool = 8        # Number of pre-established connections. Only for tcp mode (optional, default: 8).
+    connection_pool = 8        # Number of pre-established connections. Only for tcp and ws mode (optional, default: 8).
     mux_session = 1            # Number of mux sessions for tcpmux. (optional, default: 1).
     log_level = "info"         # Log level ("panic", "fatal", "error", "warn", "info", "debug", "trace", optional, default: "info").
 
@@ -125,7 +125,7 @@ You can configure the `server` and `client` to use different transport protocols
 * **Server**:
 
    ```toml
-   [server] # 
+   [server]
    bind_addr = "0.0.0.0:3080"
    transport = "tcp"
    token = "your_token" 
