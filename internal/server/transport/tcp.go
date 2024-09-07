@@ -118,7 +118,7 @@ func (s *TcpTransport) portConfigReader() {
 			}
 		}
 		if startRange > endRange {
-			s.logger.Warnf("Invalid range: %d %d", startRange, endRange)
+			s.logger.Fatalf("Invalid range: %d %d", startRange, endRange)
 		} else {
 			for i := startRange; i <= endRange; i++ {
 				if remotePort == -1 {
