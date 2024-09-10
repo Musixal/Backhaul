@@ -98,11 +98,11 @@ func (s *WsTransport) portConfigReader() {
 			continue
 		}
 
-		localPortStr := strings.TrimSpace(parts[0])
-		localPort, err := strconv.Atoi(localPortStr)
-		if err != nil {
-			s.logger.Fatalf("invalid local port in mapping: %s", localPortStr)
-			continue
+		localAddrStr := strings.TrimSpace(parts[0])
+		// Check if localAddrStr is just a port (without an address)
+		if _, err := strconv.Atoi(localAddrStr); err == nil {
+			// If it's just a port, prefix it with ":"
+			localAddrStr = ":" + localAddrStr
 		}
 
 		remotePortStr := strings.TrimSpace(parts[1])
@@ -111,7 +111,8 @@ func (s *WsTransport) portConfigReader() {
 			s.logger.Fatalf("invalid remote port in mapping: %s", remotePortStr)
 			continue
 		}
-		go s.localListener(localPort, remotePort)
+
+		go s.localListener(localAddrStr, remotePort)
 	}
 }
 
@@ -244,11 +245,10 @@ func (s *WsTransport) TunnelListener() {
 	}
 }
 
-func (s *WsTransport) localListener(localPort int, remotePort int) {
-	addr := fmt.Sprintf(":%d", localPort)
-	portListener, err := net.Listen("tcp", addr)
+func (s *WsTransport) localListener(localAddr string, remotePort int) {
+	portListener, err := net.Listen("tcp", localAddr)
 	if err != nil {
-		s.logger.Fatalf("failed to listen on %s: %v", addr, err)
+		s.logger.Fatalf("failed to listen on %s: %v", localAddr, err)
 		return
 	}
 

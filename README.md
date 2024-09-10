@@ -73,8 +73,8 @@ To start using the solution, you'll need to configure both server and client com
     log_level = "info"         # Log level ("panic", "fatal", "error", "warn", "info", "debug", "trace", optional, default: "info").
 
     ports = [ # Local to remote port mapping in this format LocalPort=RemotePort (mandatory).
-        "4000=5201",
-        "4001=5201",
+        "4000=5201", # Bind to all local ip addresses.
+        "127.0.0.1:4001=5201", # Bind to specific local address.
     ]
     ```
 

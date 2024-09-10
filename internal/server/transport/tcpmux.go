@@ -2,7 +2,6 @@ package transport
 
 import (
 	"context"
-	"fmt"
 	"math/rand"
 	"net"
 	"strconv"
@@ -87,11 +86,11 @@ func (s *TcpMuxTransport) portConfigReader() {
 			continue
 		}
 
-		localPortStr := strings.TrimSpace(parts[0])
-		localPort, err := strconv.Atoi(localPortStr)
-		if err != nil {
-			s.logger.Fatalf("invalid local port in mapping: %s", localPortStr)
-			continue
+		localAddrStr := strings.TrimSpace(parts[0])
+		// Check if localAddrStr is just a port (without an address)
+		if _, err := strconv.Atoi(localAddrStr); err == nil {
+			// If it's just a port, prefix it with ":"
+			localAddrStr = ":" + localAddrStr
 		}
 
 		remotePortStr := strings.TrimSpace(parts[1])
@@ -100,9 +99,11 @@ func (s *TcpMuxTransport) portConfigReader() {
 			s.logger.Fatalf("invalid remote port in mapping: %s", remotePortStr)
 			continue
 		}
-		go s.localListener(localPort, remotePort)
+
+		go s.localListener(localAddrStr, remotePort)
 	}
 }
+
 func (s *TcpMuxTransport) TunnelListener() {
 	tunnelListener, err := net.Listen("tcp", s.config.BindAddr)
 	if err != nil {
@@ -215,11 +216,10 @@ func (s *TcpMuxTransport) acceptStreamConn(listener net.Listener, id int, wg *sy
 	}
 }
 
-func (s *TcpMuxTransport) localListener(localPort int, remotePort int) {
-	addr := fmt.Sprintf("0.0.0.0:%d", localPort)
-	listener, err := net.Listen("tcp", addr)
+func (s *TcpMuxTransport) localListener(localAddr string, remotePort int) {
+	listener, err := net.Listen("tcp", localAddr)
 	if err != nil {
-		s.logger.Fatalf("failed to listen on %s: %v", addr, err)
+		s.logger.Fatalf("failed to listen on %s: %v", localAddr, err)
 		return
 	}
 
