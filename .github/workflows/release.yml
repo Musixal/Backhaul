@@ -12,12 +12,12 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3  # Latest stable version
+        uses: actions/checkout@v4  
 
       - name: Set up Go
-        uses: actions/setup-go@v4  # Latest stable version
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.21'  # Ensure this is the Go version you need
+          go-version: '1.21'
 
       - name: Install GoReleaser
         run: curl -sL https://git.io/goreleaser | bash
