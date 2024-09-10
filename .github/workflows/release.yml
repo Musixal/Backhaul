@@ -12,18 +12,17 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v3  # Latest stable version
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v4  # Latest stable version
         with:
-          go-version: '1.21'
+          go-version: '1.21'  # Ensure this is the Go version you need
 
       - name: Install GoReleaser
-        run: |
-          curl -sL https://git.io/goreleaser | bash
+        run: curl -sL https://git.io/goreleaser | bash
 
       - name: Run GoReleaser
-        run: goreleaser release --clean --rm-dist
+        run: goreleaser release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
