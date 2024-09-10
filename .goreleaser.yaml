@@ -1,36 +1,35 @@
-version: 2
+# .goreleaser.yml
+version: 2  # Specify the config version
 
-before:
-  hooks:
-    - go mod tidy
+project_name: backhaul
 
 builds:
-  - env:
-      - CGO_ENABLED=0
+  - id: backhaul
+    main: ./main.go 
     goos:
       - linux
-      - windows
       - darwin
-    ldflags:
-      - '-s -w'   # Strips debug info for smaller binary size
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -ldflags=-s -w 
+    env:
+      - CGO_ENABLED=0
+
 
 archives:
   - format: tar.gz
-    name_template: >-
-      backhaul_
-      {{- .Os }}_
-      {{- if eq .Arch "amd64" }}x86_64
-      {{- else if eq .Arch "386" }}i386
-      {{- else }}{{ .Arch }}{{ end }}
-      {{- if .Arm }}v{{ .Arm }}{{ end }}
-    # Use zip for windows archives
-    format_overrides:
-      - goos: windows
-        format: zip
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+release:
+  github:
+    owner: Musixal
+    name: backhaul
+
+checksum:
+  name_template: "checksums.txt"
 
 changelog:
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
+  use: git
