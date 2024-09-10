@@ -19,9 +19,14 @@ type ServerConfig struct {
 	ChannelSize    int           `toml:"channel_size"`
 	LogLevel       string        `toml:"log_level"`
 	ConnectionPool int           `toml:"connection_pool"`
-	MuxSession     int           `toml:"mux_session"`
 	Ports          []string      `toml:"ports"`
 	PPROF          bool          `toml:"pprof"`
+	// smux config
+	MuxSession       int `toml:"mux_session"`
+	MuxVersion       int `toml:"mux_version"`
+	MaxFrameSize     int `toml:"mux_framesize"`
+	MaxReceiveBuffer int `toml:"mux_recievebuffer"`
+	MaxStreamBuffer  int `toml:"mux_streambuffer"`
 }
 
 // ClientConfig represents the configuration for the client.
@@ -33,9 +38,14 @@ type ClientConfig struct {
 	Nodelay       bool          `toml:"nodelay"`
 	Keepalive     int           `toml:"keepalive_period"`
 	LogLevel      string        `toml:"log_level"`
-	MuxSession    int           `toml:"mux_session"`
 	Forwarder     []string      `toml:"forwarder"`
 	PPROF         bool          `toml:"pprof"`
+	// smux config
+	MuxSession       int `toml:"mux_session"`
+	MuxVersion       int `toml:"mux_version"`
+	MaxFrameSize     int `toml:"mux_framesize"`
+	MaxReceiveBuffer int `toml:"mux_recievebuffer"`
+	MaxStreamBuffer  int `toml:"mux_streambuffer"`
 }
 
 // Config represents the complete configuration, including both server and client settings.

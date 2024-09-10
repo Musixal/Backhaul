@@ -60,14 +60,17 @@ func (c *Client) Start() {
 
 	} else if c.config.Transport == config.TCPMUX {
 		tcpMuxConfig := &transport.TcpMuxConfig{
-			RemoteAddr:    c.config.RemoteAddr,
-			Nodelay:       c.config.Nodelay,
-			KeepAlive:     time.Duration(c.config.Keepalive) * time.Second,
-			RetryInterval: time.Duration(c.config.RetryInterval) * time.Second,
-			Token:         c.config.Token,
-			MuxSession:    c.config.MuxSession,
-
-			Forwarder: c.forwarderReader(c.config.Forwarder),
+			RemoteAddr:       c.config.RemoteAddr,
+			Nodelay:          c.config.Nodelay,
+			KeepAlive:        time.Duration(c.config.Keepalive) * time.Second,
+			RetryInterval:    time.Duration(c.config.RetryInterval) * time.Second,
+			Token:            c.config.Token,
+			MuxSession:       c.config.MuxSession,
+			MuxVersion:       c.config.MuxVersion,
+			MaxFrameSize:     c.config.MaxFrameSize,
+			MaxReceiveBuffer: c.config.MaxReceiveBuffer,
+			MaxStreamBuffer:  c.config.MaxStreamBuffer,
+			Forwarder:        c.forwarderReader(c.config.Forwarder),
 		}
 		tcpMuxClient := transport.NewMuxClient(c.ctx, tcpMuxConfig, c.logger)
 		go tcpMuxClient.MuxDialer()

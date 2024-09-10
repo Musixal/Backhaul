@@ -15,6 +15,11 @@ const ( // Default values
 	defaultLogLevel       = "info"
 	defaultMuxSession     = 1
 	defaultKeepAlive      = 20
+	// related to smux
+	defaultMuxVersion       = 1
+	defaultMaxFrameSize     = 32768   // 32KB
+	defaultMaxReceiveBuffer = 4194304 // 4MB
+	defaultMaxStreamBuffer  = 65536   // 256KB
 )
 
 func applyDefaults(cfg *config.Config) {
@@ -88,4 +93,34 @@ func applyDefaults(cfg *config.Config) {
 	if cfg.Client.Keepalive <= 0 {
 		cfg.Client.Keepalive = defaultKeepAlive
 	}
+
+	// Mux version
+	if cfg.Server.MuxVersion <= 0 || cfg.Server.MuxVersion > 2 {
+		cfg.Server.MuxVersion = defaultMuxVersion
+	}
+	if cfg.Client.MuxVersion <= 0 || cfg.Client.MuxVersion > 2 {
+		cfg.Client.MuxVersion = defaultMuxVersion
+	}
+	// MaxFrameSize
+	if cfg.Server.MaxFrameSize <= 0 {
+		cfg.Server.MaxFrameSize = defaultMaxFrameSize
+	}
+	if cfg.Client.MaxFrameSize <= 0 {
+		cfg.Client.MaxFrameSize = defaultMaxFrameSize
+	}
+	// MaxReceiveBuffer
+	if cfg.Server.MaxReceiveBuffer <= 0 {
+		cfg.Server.MaxReceiveBuffer = defaultMaxReceiveBuffer
+	}
+	if cfg.Client.MaxReceiveBuffer <= 0 {
+		cfg.Client.MaxReceiveBuffer = defaultMaxReceiveBuffer
+	}
+	// MaxStreamBuffer
+	if cfg.Server.MaxStreamBuffer <= 0 {
+		cfg.Server.MaxStreamBuffer = defaultMaxStreamBuffer
+	}
+	if cfg.Client.MaxStreamBuffer <= 0 {
+		cfg.Client.MaxStreamBuffer = defaultMaxStreamBuffer
+	}
+
 }

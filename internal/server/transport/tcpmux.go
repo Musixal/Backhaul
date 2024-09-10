@@ -26,13 +26,17 @@ type TcpMuxTransport struct {
 }
 
 type TcpMuxConfig struct {
-	BindAddr    string
-	Nodelay     bool
-	KeepAlive   time.Duration
-	Token       string
-	MuxSession  int
-	ChannelSize int
-	Ports       []string
+	BindAddr         string
+	Nodelay          bool
+	KeepAlive        time.Duration
+	Token            string
+	MuxSession       int
+	ChannelSize      int
+	Ports            []string
+	MuxVersion       int
+	MaxFrameSize     int
+	MaxReceiveBuffer int
+	MaxStreamBuffer  int
 }
 
 func NewTcpMuxServer(parentCtx context.Context, config *TcpMuxConfig, logger *logrus.Logger) *TcpMuxTransport {
@@ -160,12 +164,12 @@ func (s *TcpMuxTransport) acceptStreamConn(listener net.Listener, id int, wg *sy
 
 			// config fot smux
 			config := smux.Config{
-				Version:           2,                // Smux protocol version
-				KeepAliveInterval: 10 * time.Second, // Shorter keep-alive interval to quickly detect dead peers
-				KeepAliveTimeout:  30 * time.Second, // Aggressive timeout to handle unresponsive connections
-				MaxFrameSize:      8 * 1024,         // Smaller frame size to reduce latency and avoid fragmentation
-				MaxReceiveBuffer:  4 * 1024 * 1024,  // 8MB buffer to balance memory usage and throughput
-				MaxStreamBuffer:   1 * 1024 * 1024,  // 2MB buffer per stream for better latency
+				Version:           s.config.MuxVersion, // Smux protocol version
+				KeepAliveInterval: 10 * time.Second,    // Shorter keep-alive interval to quickly detect dead peers
+				KeepAliveTimeout:  30 * time.Second,    // Aggressive timeout to handle unresponsive connections
+				MaxFrameSize:      s.config.MaxFrameSize,
+				MaxReceiveBuffer:  s.config.MaxReceiveBuffer,
+				MaxStreamBuffer:   s.config.MaxStreamBuffer,
 			}
 			// smux server
 			session, err := smux.Client(conn, &config)

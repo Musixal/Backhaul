@@ -24,13 +24,17 @@ type TcpMuxTransport struct {
 }
 
 type TcpMuxConfig struct {
-	RemoteAddr    string
-	Nodelay       bool
-	KeepAlive     time.Duration
-	RetryInterval time.Duration
-	Token         string
-	MuxSession    int
-	Forwarder     map[int]string
+	RemoteAddr       string
+	Nodelay          bool
+	KeepAlive        time.Duration
+	RetryInterval    time.Duration
+	Token            string
+	MuxSession       int
+	Forwarder        map[int]string
+	MuxVersion       int
+	MaxFrameSize     int
+	MaxReceiveBuffer int
+	MaxStreamBuffer  int
 }
 
 func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logrus.Logger) *TcpMuxTransport {
@@ -92,14 +96,14 @@ func (c *TcpMuxTransport) MuxDialer() {
 					continue
 				}
 
-				// idea
+				// config fot smux
 				config := smux.Config{
-					Version:           2,                // Smux protocol version
-					KeepAliveInterval: 10 * time.Second, // Shorter keep-alive interval to quickly detect dead peers
-					KeepAliveTimeout:  30 * time.Second, // Aggressive timeout to handle unresponsive connections
-					MaxFrameSize:      8 * 1024,         // Smaller frame size to reduce latency and avoid fragmentation
-					MaxReceiveBuffer:  4 * 1024 * 1024,  // 8MB buffer to balance memory usage and throughput
-					MaxStreamBuffer:   1 * 1024 * 1024,  // 2MB buffer per stream for better latency
+					Version:           c.config.MuxVersion, // Smux protocol version
+					KeepAliveInterval: 10 * time.Second,    // Shorter keep-alive interval to quickly detect dead peers
+					KeepAliveTimeout:  30 * time.Second,    // Aggressive timeout to handle unresponsive connections
+					MaxFrameSize:      c.config.MaxFrameSize,
+					MaxReceiveBuffer:  c.config.MaxReceiveBuffer,
+					MaxStreamBuffer:   c.config.MaxStreamBuffer,
 				}
 
 				// SMUX server

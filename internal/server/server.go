@@ -55,13 +55,17 @@ func (s *Server) Start() {
 
 	} else if s.config.Transport == config.TCPMUX {
 		tcpMuxConfig := &transport.TcpMuxConfig{
-			BindAddr:    s.config.BindAddr,
-			Nodelay:     s.config.Nodelay,
-			KeepAlive:   time.Duration(s.config.Keepalive) * time.Second,
-			Token:       s.config.Token,
-			MuxSession:  s.config.MuxSession,
-			ChannelSize: s.config.ChannelSize,
-			Ports:       s.config.Ports,
+			BindAddr:         s.config.BindAddr,
+			Nodelay:          s.config.Nodelay,
+			KeepAlive:        time.Duration(s.config.Keepalive) * time.Second,
+			Token:            s.config.Token,
+			MuxSession:       s.config.MuxSession,
+			ChannelSize:      s.config.ChannelSize,
+			Ports:            s.config.Ports,
+			MuxVersion:       s.config.MuxVersion,
+			MaxFrameSize:     s.config.MaxFrameSize,
+			MaxReceiveBuffer: s.config.MaxReceiveBuffer,
+			MaxStreamBuffer:  s.config.MaxStreamBuffer,
 		}
 
 		tcpMuxServer := transport.NewTcpMuxServer(s.ctx, tcpMuxConfig, s.logger)
