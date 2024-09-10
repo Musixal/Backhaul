@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  goreleaser:
     name: Release Project
     runs-on: ubuntu-latest
 
