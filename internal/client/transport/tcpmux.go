@@ -87,11 +87,11 @@ func (c *TcpMuxTransport) MuxDialer() {
 			case <-c.ctx.Done():
 				return
 			default:
-				c.logger.Debug("initiating new mux session to address ", c.config.RemoteAddr)
+				c.logger.Debugf("initiating new mux session to address %s (session ID: %d)", c.config.RemoteAddr, id)
 				// Dial to the tunnel server
 				tunnelTCPConn, err := c.tcpDialer(c.config.RemoteAddr, c.config.Nodelay)
 				if err != nil {
-					c.logger.Error("failed to dial tunnel server: ", err)
+					c.logger.Errorf("failed to dial tunnel server at %s: %v", c.config.RemoteAddr, err)
 					time.Sleep(c.config.RetryInterval)
 					continue
 				}
@@ -109,20 +109,20 @@ func (c *TcpMuxTransport) MuxDialer() {
 				// SMUX server
 				session, err := smux.Server(tunnelTCPConn, &config)
 				if err != nil {
-					c.logger.Error("failed to create mux session: ", err)
+					c.logger.Errorf("failed to create mux session: %v", err)
 					continue
 				}
 				// auth
 				stream, err := session.OpenStream()
 				if err != nil {
-					c.logger.Error("unable to open a new mux stream for auth")
+					c.logger.Errorf("unable to open a new mux stream for auth: %v", err)
 					session.Close()
 					continue
 				}
 
 				err = utils.SendBinaryString(stream, c.config.Token)
 				if err != nil {
-					c.logger.Error("failed to send token")
+					c.logger.Errorf("Failed to send token: %v", err)
 					session.Close()
 					continue
 				}
@@ -130,11 +130,11 @@ func (c *TcpMuxTransport) MuxDialer() {
 				msg, err := utils.ReceiveBinaryString(stream)
 				if err == nil && msg == "ok" {
 					c.smuxSession[id] = session
-					c.logger.Info("mux session established successfully")
+					c.logger.Infof("Mux session established successfully (session ID: %d)", id)
 					go c.handleMUXStreams(id)
 					break innerloop
 				} else {
-					c.logger.Error("failed to establish a new session. token error")
+					c.logger.Errorf("Failed to establish a new session. Token error or unexpected response: %v", err)
 				}
 
 			}
@@ -150,7 +150,8 @@ func (c *TcpMuxTransport) handleMUXStreams(id int) {
 		default:
 			stream, err := c.smuxSession[id].AcceptStream()
 			if err != nil {
-				c.logger.Errorf("failed to accept mux stream: %v", err)
+				c.logger.Errorf("Failed to accept mux stream for session ID %d: %v", id, err)
+				c.logger.Info("attempting to restart client...")
 				go c.Restart()
 				return
 
@@ -206,7 +207,7 @@ func (c *TcpMuxTransport) handleTCPSession(tcpsession net.Conn) {
 		port, err := utils.ReceiveBinaryInt(tcpsession)
 
 		if err != nil {
-			c.logger.Tracef("unable to get the port from the %s connection", tcpsession.RemoteAddr().String())
+			c.logger.Tracef("Unable to get the port from the %s connection: %v", tcpsession.RemoteAddr().String(), err)
 			tcpsession.Close()
 			return
 		}
@@ -227,7 +228,7 @@ func (c *TcpMuxTransport) localDialer(tunnelConnection net.Conn, port uint16) {
 
 		localConnection, err := c.tcpDialer(localAddress, c.config.Nodelay)
 		if err != nil {
-			c.logger.Errorf("connecting to the local address %s is not possible", localAddress)
+			c.logger.Errorf("Failed to connect to local address %s: %v", localAddress, err)
 			tunnelConnection.Close()
 			return
 		}

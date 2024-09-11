@@ -86,16 +86,16 @@ func (c *WsTransport) ChannelDialer() {
 		case <-c.ctx.Done():
 			return
 		default:
-			c.logger.Info("trying to establish a new ws control channel connection")
+			c.logger.Info("attempting to establish a new webSocket control channel connection")
 
 			tunnelWSConn, err := c.wsDialer(c.config.RemoteAddr, "/channel")
 			if err != nil {
-				c.logger.Error(err)
+				c.logger.Errorf("failed to dial webSocket control channel: %v", err)
 				time.Sleep(c.config.RetryInterval)
 				continue
 			}
 			c.controlChannel = tunnelWSConn
-			c.logger.Info("ws control channel established successfully")
+			c.logger.Info("websocket control channel established successfully")
 			go c.channelListener()
 			return
 		}
@@ -110,18 +110,18 @@ func (c *WsTransport) channelListener() {
 		default:
 			_, msg, err := c.controlChannel.ReadMessage()
 			if err != nil {
-				c.logger.Error("error receiving channel signal, restarting client")
+				c.logger.Errorf("error receiving channel signal: %v. Restarting client...", err)
 				go c.Restart()
 				return
 			}
 
 			message := string(msg)
 			if message == c.chanSignal {
-				go c.wsTunDialer()
+				go c.tunnelDialer()
 			} else if message == c.heartbeatSig {
 				c.logger.Debug("heartbeat received successfully")
 			} else {
-				c.logger.Error("weird response from channel, exiting from control channel, restarting client")
+				c.logger.Errorf("unexpected response from control channel: %s. Restarting client...", message)
 				go c.Restart()
 				return
 			}
@@ -129,21 +129,21 @@ func (c *WsTransport) channelListener() {
 	}
 }
 
-func (c *WsTransport) wsTunDialer() {
+func (c *WsTransport) tunnelDialer() {
 	select {
 	case <-c.ctx.Done():
 		return
 	default:
 		if c.controlChannel == nil {
-			c.logger.Warn("no ws control channel found...")
+			c.logger.Warn("websocket control channel is nil, cannot dial tunnel. Restarting client...")
 			go c.Restart()
 			return
 		}
-		c.logger.Debug("initiating new connection to address ", c.config.RemoteAddr)
+		c.logger.Debugf("initiating new websocket tunnel connection to address %s", c.config.RemoteAddr)
 
 		tunnelWSConn, err := c.wsDialer(c.config.RemoteAddr, "")
 		if err != nil {
-			c.logger.Error("failed to dial tunnel server: ", err)
+			c.logger.Errorf("failed to dial WebSocket tunnel server: %v", err)
 			return
 		}
 		go c.handleWSSession(tunnelWSConn)
@@ -158,17 +158,17 @@ func (c *WsTransport) handleWSSession(wsSession *websocket.Conn) {
 		_, portBytes, err := wsSession.ReadMessage()
 
 		if err != nil {
-			c.logger.Debugf("unable to get the port from the %s connection", wsSession.RemoteAddr().String())
+			c.logger.Debugf("Unable to get port from WebSocket connection %s: %v", wsSession.RemoteAddr().String(), err)
 			wsSession.Close()
 			return
 		}
 
 		port := binary.BigEndian.Uint16(portBytes)
-		go c.wsLocDialer(wsSession, port)
+		go c.localDialer(wsSession, port)
 	}
 }
 
-func (c *WsTransport) wsLocDialer(tunnelConnection *websocket.Conn, port uint16) {
+func (c *WsTransport) localDialer(tunnelConnection *websocket.Conn, port uint16) {
 	select {
 	case <-c.ctx.Done():
 		return
@@ -180,7 +180,7 @@ func (c *WsTransport) wsLocDialer(tunnelConnection *websocket.Conn, port uint16)
 
 		localConnection, err := c.tcpDialer(localAddress, c.config.Nodelay)
 		if err != nil {
-			c.logger.Errorf("connecting to the local address %s is not possible", localAddress)
+			c.logger.Errorf("connecting to local address %s is not possible", localAddress)
 			tunnelConnection.Close()
 			return
 		}
@@ -215,7 +215,7 @@ func (c *WsTransport) wsDialer(addr string, path string) (*websocket.Conn, error
 	// Dial to the WebSocket server
 	tunnelWSConn, _, err := dialer.Dial(wsURL, headers)
 	if err != nil {
-		c.logger.Error("failed to dial tunnel server: ", err)
+		c.logger.Errorf("Failed to dial WebSocket server %s: %v", wsURL, err)
 		return nil, err
 	}
 

@@ -65,7 +65,7 @@ func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 }
 func (s *WsTransport) Restart() {
 	if !s.restartMutex.TryLock() {
-		s.logger.Warn("server is already restarting")
+		s.logger.Warn("server restart already in progress, skipping restart attempt")
 		return
 	}
 	defer s.restartMutex.Unlock()
@@ -94,7 +94,7 @@ func (s *WsTransport) portConfigReader() {
 	for _, portMapping := range s.config.Ports {
 		parts := strings.Split(portMapping, "=")
 		if len(parts) != 2 {
-			s.logger.Fatalf("invalid port mapping: %s", portMapping)
+			s.logger.Fatalf("invalid port mapping format: %s", portMapping)
 			continue
 		}
 
@@ -126,16 +126,17 @@ func (s *WsTransport) heartbeat() {
 			return
 		case <-ticker.C:
 			if s.controlChannel == nil {
+				s.logger.Warn("control channel is nil. Restarting server to re-establish connection...")
 				go s.Restart()
 				return
 			}
 			err := s.controlChannel.WriteMessage(websocket.TextMessage, []byte(s.heartbeatSig))
 			if err != nil {
-				s.logger.Error("unable to send heartbeat. restarting server...")
+				s.logger.Errorf("Failed to send heartbeat signal. Error: %v. Restarting server...", err)
 				go s.Restart()
 				return
 			}
-			s.logger.Debug("heartbeat sent successfully")
+			s.logger.Debug("heartbeat signal sent successfully")
 		}
 	}
 }
@@ -169,7 +170,7 @@ func (s *WsTransport) getNewConnection() {
 			err := s.controlChannel.WriteMessage(websocket.TextMessage, []byte(s.chanSignal))
 			s.mu.Unlock()
 			if err != nil {
-				s.logger.Error("error sending channel signal")
+				s.logger.Error("error sending channel signal, attempting to restart server...")
 				go s.Restart()
 				return
 			}
@@ -239,20 +240,20 @@ func (s *WsTransport) TunnelListener() {
 	<-s.ctx.Done()
 
 	// Gracefully shutdown the server
-	s.logger.Infof("shutting down the WebSocket server on %s", addr)
+	s.logger.Infof("shutting down the webSocket server on %s", addr)
 	if err := server.Shutdown(context.Background()); err != nil {
-		s.logger.Errorf("Failed to gracefully shut down the server: %v", err)
+		s.logger.Errorf("Failed to gracefully shutdown the server: %v", err)
 	}
 }
 
 func (s *WsTransport) localListener(localAddr string, remotePort int) {
 	portListener, err := net.Listen("tcp", localAddr)
 	if err != nil {
-		s.logger.Fatalf("failed to listen on %s: %v", localAddr, err)
+		s.logger.Fatalf("failed to start listener on %s: %v", localAddr, err)
 		return
 	}
 
-	//close the local listener after context cancellation
+	//close local listener after context cancellation
 	defer portListener.Close()
 
 	s.logger.Infof("listener started successfully, listening on address: %s", portListener.Addr().String())
@@ -294,7 +295,7 @@ func (s *WsTransport) acceptLocConn(listener net.Listener, acceptChan chan net.C
 				if err := tcpConn.SetNoDelay(s.config.Nodelay); err != nil {
 					s.logger.Warnf("failed to set TCP_NODELAY for %s: %v", tcpConn.RemoteAddr().String(), err)
 				} else {
-					s.logger.Tracef("TCP_NODELAY enabled successfully for %s", tcpConn.RemoteAddr().String())
+					s.logger.Tracef("TCP_NODELAY enabled for %s", tcpConn.RemoteAddr().String())
 				}
 			}
 			tcpConn.SetKeepAlive(true)
@@ -335,7 +336,7 @@ func (s *WsTransport) handleWSSession(remotePort int, acceptChan chan net.Conn) 
 					break innerloop
 
 				case <-time.After(s.timeout):
-					s.logger.Warn("Tunnel connection unavailable. Dropping local connection.")
+					s.logger.Warn("tunnel connection unavailable, attempting to restart server...")
 					incomingConn.Close()
 					go s.Restart()
 					return

@@ -11,7 +11,7 @@ func (c *Client) forwarderReader(config []string) map[int]string {
 	for _, portMapping := range config {
 		parts := strings.Split(portMapping, "=")
 		if len(parts) != 2 {
-			c.logger.Fatalf("invalid port mapping: %s", portMapping)
+			c.logger.Fatalf("invalid port mapping format: %s", portMapping)
 			continue
 		}
 
