@@ -31,3 +31,6 @@ MakeFile
 .DS_Store
 .vscode
 dist/
+
+#
+*.json
