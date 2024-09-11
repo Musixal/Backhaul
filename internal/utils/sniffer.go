@@ -2,13 +2,14 @@ package utils
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"net/http"
 	"os"
 	"sort"
 	"sync"
-	"text/template"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -115,14 +116,17 @@ func (m *Usage) GetUsage() []PortUsage {
 	return usageData
 }
 
-// handles requests to the root URL and serves the index page
+//go:embed index.html
+var indexHTML embed.FS
+
 func (m *Usage) handleIndex(w http.ResponseWriter, r *http.Request) {
 	usageData := m.GetUsage()
 
-	// Parse the HTML template
-	tmpl, err := template.ParseFiles("internal/templates/index.html")
+	// Parse the embedded template
+	tmpl, err := template.ParseFS(indexHTML, "index.html")
 	if err != nil {
 		m.logger.Error("error parsing template: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
@@ -130,6 +134,7 @@ func (m *Usage) handleIndex(w http.ResponseWriter, r *http.Request) {
 	err = tmpl.Execute(w, usageDataWithReadableUsage(usageData))
 	if err != nil {
 		m.logger.Error("error executing template: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 }
 
