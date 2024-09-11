@@ -94,12 +94,11 @@ func (c *TcpTransport) ChannelDialer() {
 			// Sending security token
 			err = utils.SendBinaryString(tunnelTCPConn, c.config.Token)
 			if err != nil {
-				c.logger.Errorf("Failed to send security token: %v", err)
+				c.logger.Errorf("failed to send security token: %v", err)
 				tunnelTCPConn.Close()
 				continue
 			}
 
-			// Set a read deadline for the token response
 			// Set a read deadline for the token response
 			if err := tunnelTCPConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
 				c.logger.Errorf("failed to set read deadline: %v", err)
@@ -153,7 +152,7 @@ func (c *TcpTransport) channelListener() {
 				c.logger.Debug("channel signal received, initiating tunnel dialer")
 				go c.tunnelDialer()
 			case c.heartbeatSig:
-				c.logger.Debug("geartbeat signal received successfully")
+				c.logger.Debug("heartbeat signal received successfully")
 			default:
 				c.logger.Errorf("unexpected response from channel: %s. Restarting client...", msg)
 				go c.Restart()
