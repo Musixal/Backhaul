@@ -324,12 +324,6 @@ func (s *WsTransport) handleWSSession(remotePort int, acceptChan chan net.Conn) 
 			for {
 				select {
 				case tunnelConnection := <-s.tunnelChannel:
-					// read any pings
-					// tunnelConnection.(*websocket.Conn).SetReadDeadline(time.Now().Add(1 * time.Millisecond))
-					// _, _, _ = tunnelConnection.(*websocket.Conn).ReadMessage()
-					// // Clear the read deadline after reading residual data
-					// tunnelConnection.(*websocket.Conn).SetReadDeadline(time.Time{})
-
 					// Send the target port over the WebSocket connection
 					if err := utils.SendWebSocketInt(tunnelConnection, uint16(remotePort)); err != nil {
 						s.logger.Warnf("%v", err) // failed to send port number
@@ -340,15 +334,11 @@ func (s *WsTransport) handleWSSession(remotePort int, acceptChan chan net.Conn) 
 					go utils.WSToTCPConnHandler(tunnelConnection, incomingConn, s.logger)
 					break innerloop
 
-				case <-time.After(s.timeout / 2):
-					s.logger.Warn("no available tunnel connection. requesting tunnel connection")
-					s.getNewConnChan <- struct{}{}
-					continue innerloop
-
 				case <-time.After(s.timeout):
-					s.logger.Warn("no available tunnel connection. discard the local connection")
+					s.logger.Warn("Tunnel connection unavailable. Dropping local connection.")
 					incomingConn.Close()
-					break innerloop
+					go s.Restart()
+					return
 
 				case <-s.ctx.Done():
 					return
