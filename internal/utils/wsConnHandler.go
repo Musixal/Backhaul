@@ -10,15 +10,15 @@ import (
 )
 
 // WebSocketToTCPConnectionHandler handles data transfer between a WebSocket and a TCP connection
-func WSToTCPConnHandler(wsConn *websocket.Conn, tcpConn net.Conn, logger *logrus.Logger) {
+func WSToTCPConnHandler(wsConn *websocket.Conn, tcpConn net.Conn, logger *logrus.Logger, usage *Usage, remotePort int, sniffing bool) {
 	done := make(chan struct{})
 
 	go func() {
 		defer close(done)
-		transferWebSocketToTCP(wsConn, tcpConn, logger)
+		transferWebSocketToTCP(wsConn, tcpConn, logger, usage, remotePort, sniffing)
 	}()
 
-	transferTCPToWebSocket(tcpConn, wsConn, logger)
+	transferTCPToWebSocket(tcpConn, wsConn, logger, usage, remotePort, sniffing)
 
 	<-done
 
@@ -27,7 +27,7 @@ func WSToTCPConnHandler(wsConn *websocket.Conn, tcpConn net.Conn, logger *logrus
 }
 
 // transferWebSocketToTCP transfers data from a WebSocket connection to a TCP connection
-func transferWebSocketToTCP(wsConn *websocket.Conn, tcpConn net.Conn, logger *logrus.Logger) {
+func transferWebSocketToTCP(wsConn *websocket.Conn, tcpConn net.Conn, logger *logrus.Logger, usage *Usage, remotePort int, sniffing bool) {
 	for {
 		// Read message from the WebSocket connection
 		messageType, message, err := wsConn.ReadMessage()
@@ -45,20 +45,23 @@ func transferWebSocketToTCP(wsConn *websocket.Conn, tcpConn net.Conn, logger *lo
 		// Only handle text or binary messages (ignore control messages like pings)
 		if messageType == websocket.TextMessage || messageType == websocket.BinaryMessage {
 			// Write the message to the TCP connection
-			_, err = tcpConn.Write(message)
+			w, err := tcpConn.Write(message)
 			if err != nil {
 				logger.Trace("unable to write to the TCP connection: ", err)
 				wsConn.Close()
 				tcpConn.Close()
 				return
 			}
-			logger.Tracef("transferred data from WebSocket to TCP: %d bytes", len(message))
+			logger.Tracef("transferred data from WebSocket to TCP: %d bytes", w)
+			if sniffing {
+				go usage.AddOrUpdatePort(remotePort, uint64(w))
+			}
 		}
 	}
 }
 
 // transferTCPToWebSocket transfers data from a TCP connection to a WebSocket connection
-func transferTCPToWebSocket(tcpConn net.Conn, wsConn *websocket.Conn, logger *logrus.Logger) {
+func transferTCPToWebSocket(tcpConn net.Conn, wsConn *websocket.Conn, logger *logrus.Logger, usage *Usage, remotePort int, sniffing bool) {
 	buf := make([]byte, 16*1024) // 16K buffer size
 	for {
 		// Read data from the TCP connection
@@ -88,5 +91,8 @@ func transferTCPToWebSocket(tcpConn net.Conn, wsConn *websocket.Conn, logger *lo
 		}
 
 		logger.Tracef("transferred data from TCP to WebSocket: %d bytes", n)
+		if sniffing {
+			go usage.AddOrUpdatePort(remotePort, uint64(n))
+		}
 	}
 }

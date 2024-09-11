@@ -30,6 +30,7 @@ type WsTransport struct {
 	heartbeatSig      string
 	chanSignal        string
 	mu                sync.Mutex
+	usageMonitor      *utils.Usage
 }
 
 type WsConfig struct {
@@ -40,6 +41,9 @@ type WsConfig struct {
 	Token          string
 	ChannelSize    int
 	Ports          []string
+	Sniffing       bool
+	WebPort        int
+	SnifferLog     string
 }
 
 func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Logger) *WsTransport {
@@ -59,6 +63,7 @@ func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 		heartbeatDuration: 30 * time.Second, // Default heartbeat duration
 		heartbeatSig:      "0",              // Default heartbeat signal
 		chanSignal:        "1",              // Default channel signal
+		usageMonitor:      utils.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
 	}
 
 	return server
@@ -85,6 +90,7 @@ func (s *WsTransport) Restart() {
 	s.tunnelChannel = make(chan *websocket.Conn, s.config.ChannelSize)
 	s.getNewConnChan = make(chan struct{}, s.config.ChannelSize)
 	s.controlChannel = nil
+	s.usageMonitor = utils.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.logger)
 
 	go s.TunnelListener()
 
@@ -217,6 +223,11 @@ func (s *WsTransport) TunnelListener() {
 				go s.heartbeat()
 				go s.poolChecker()
 				go s.portConfigReader()
+
+				if s.config.Sniffing {
+					go s.usageMonitor.Monitor()
+				}
+
 				return
 			}
 
@@ -332,7 +343,7 @@ func (s *WsTransport) handleWSSession(remotePort int, acceptChan chan net.Conn) 
 						continue innerloop
 					}
 					// Handle data exchange between connections
-					go utils.WSToTCPConnHandler(tunnelConnection, incomingConn, s.logger)
+					go utils.WSToTCPConnHandler(tunnelConnection, incomingConn, s.logger, s.usageMonitor, incomingConn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffing)
 					break innerloop
 
 				case <-time.After(s.timeout):

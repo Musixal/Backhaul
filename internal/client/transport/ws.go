@@ -25,6 +25,7 @@ type WsTransport struct {
 	restartMutex   sync.Mutex
 	heartbeatSig   string
 	chanSignal     string
+	usageMonitor   *utils.Usage
 }
 type WsConfig struct {
 	RemoteAddr    string
@@ -33,6 +34,9 @@ type WsConfig struct {
 	RetryInterval time.Duration
 	Token         string
 	Forwarder     map[int]string
+	Sniffing      bool
+	WebPort       int
+	SnifferLog    string
 }
 
 func NewWSClient(parentCtx context.Context, config *WsConfig, logger *logrus.Logger) *WsTransport {
@@ -49,7 +53,7 @@ func NewWSClient(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 		timeout:        5 * time.Second, // Default timeout
 		heartbeatSig:   "0",             // Default heartbeat signal
 		chanSignal:     "1",             // Default channel signal
-
+		usageMonitor:   utils.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
 	}
 
 	return client
@@ -75,6 +79,7 @@ func (c *WsTransport) Restart() {
 
 	// Re-initialize variables
 	c.controlChannel = nil
+	c.usageMonitor = utils.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.logger)
 
 	go c.ChannelDialer()
 
@@ -97,6 +102,11 @@ func (c *WsTransport) ChannelDialer() {
 			c.controlChannel = tunnelWSConn
 			c.logger.Info("websocket control channel established successfully")
 			go c.channelListener()
+
+			if c.config.Sniffing {
+				go c.usageMonitor.Monitor()
+			}
+
 			return
 		}
 	}
@@ -185,7 +195,7 @@ func (c *WsTransport) localDialer(tunnelConnection *websocket.Conn, port uint16)
 			return
 		}
 		c.logger.Debugf("connected to local address %s successfully", localAddress)
-		go utils.WSToTCPConnHandler(tunnelConnection, localConnection, c.logger)
+		go utils.WSToTCPConnHandler(tunnelConnection, localConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffing)
 	}
 }
 

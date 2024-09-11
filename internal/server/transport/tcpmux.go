@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"net"
 	"strconv"
@@ -23,6 +24,7 @@ type TcpMuxTransport struct {
 	smuxSession  []*smux.Session
 	restartMutex sync.Mutex
 	timeout      time.Duration
+	usageMonitor *utils.Usage
 }
 
 type TcpMuxConfig struct {
@@ -37,6 +39,9 @@ type TcpMuxConfig struct {
 	MaxFrameSize     int
 	MaxReceiveBuffer int
 	MaxStreamBuffer  int
+	Sniffing         bool
+	WebPort          int
+	SnifferLog       string
 }
 
 func NewTcpMuxServer(parentCtx context.Context, config *TcpMuxConfig, logger *logrus.Logger) *TcpMuxTransport {
@@ -45,12 +50,13 @@ func NewTcpMuxServer(parentCtx context.Context, config *TcpMuxConfig, logger *lo
 
 	// Initialize the TcpTransport struct
 	server := &TcpMuxTransport{
-		config:      config,
-		ctx:         ctx,
-		cancel:      cancel,
-		logger:      logger,
-		timeout:     2 * time.Second, // Default timeout
-		smuxSession: make([]*smux.Session, config.MuxSession),
+		config:       config,
+		ctx:          ctx,
+		cancel:       cancel,
+		logger:       logger,
+		timeout:      2 * time.Second, // Default timeout
+		smuxSession:  make([]*smux.Session, config.MuxSession),
+		usageMonitor: utils.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
 	}
 
 	return server
@@ -76,6 +82,7 @@ func (s *TcpMuxTransport) Restart() {
 
 	// Re-initialize variables
 	s.smuxSession = make([]*smux.Session, s.config.MuxSession)
+	s.usageMonitor = utils.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.logger)
 
 	go s.TunnelListener()
 
@@ -128,6 +135,10 @@ func (s *TcpMuxTransport) TunnelListener() {
 	wg.Wait()
 
 	go s.portConfigReader()
+
+	if s.config.Sniffing {
+		go s.usageMonitor.Monitor()
+	}
 
 	<-s.ctx.Done()
 }
@@ -328,7 +339,7 @@ func (s *TcpMuxTransport) handleMUXSession(acceptChan chan net.Conn, remotePort 
 				continue
 			}
 
-			go utils.ConnectionHandler(stream, incomingConn, s.logger)
+			go utils.ConnectionHandler(stream, incomingConn, s.logger, s.usageMonitor, incomingConn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffing)
 
 		case <-s.ctx.Done():
 			return

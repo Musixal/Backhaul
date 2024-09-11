@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -26,6 +27,7 @@ type TcpTransport struct {
 	heartbeatDuration time.Duration
 	heartbeatSig      string
 	chanSignal        string
+	usageMonitor      *utils.Usage
 }
 
 type TcpConfig struct {
@@ -36,6 +38,9 @@ type TcpConfig struct {
 	Token          string
 	ChannelSize    int
 	Ports          []string
+	Sniffing       bool
+	WebPort        int
+	SnifferLog     string
 }
 
 func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.Logger) *TcpTransport {
@@ -55,6 +60,7 @@ func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		heartbeatDuration: 30 * time.Second, // Default heartbeat duration
 		heartbeatSig:      "0",              // Default heartbeat signal
 		chanSignal:        "1",              // Default channel signal
+		usageMonitor:      utils.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
 	}
 
 	return server
@@ -82,6 +88,7 @@ func (s *TcpTransport) Restart() {
 	s.tunnelChannel = make(chan net.Conn, s.config.ChannelSize)
 	s.getNewConnChan = make(chan struct{}, s.config.ChannelSize)
 	s.controlChannel = nil
+	s.usageMonitor = utils.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.logger)
 
 	go s.TunnelListener()
 
@@ -228,6 +235,11 @@ func (s *TcpTransport) channelListener() {
 			go s.heartbeat()
 			go s.poolChecker()
 			go s.portConfigReader()
+
+			if s.config.Sniffing {
+				go s.usageMonitor.Monitor()
+			}
+
 			return
 		}
 	}
@@ -376,7 +388,7 @@ func (s *TcpTransport) handleTCPSession(remotePort int, acceptChan chan net.Conn
 						continue innerloop
 					}
 					// Handle data exchange between connections
-					go utils.ConnectionHandler(incomingConn, tunnelConnection, s.logger)
+					go utils.ConnectionHandler(incomingConn, tunnelConnection, s.logger, s.usageMonitor, incomingConn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffing)
 					break innerloop
 
 				case <-time.After(s.timeout):

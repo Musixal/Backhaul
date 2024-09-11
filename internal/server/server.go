@@ -48,6 +48,9 @@ func (s *Server) Start() {
 			Token:          s.config.Token,
 			ChannelSize:    s.config.ChannelSize,
 			Ports:          s.config.Ports,
+			Sniffing:       s.config.Sniffer,
+			WebPort:        s.config.WebPort,
+			SnifferLog:     s.config.SnifferLog,
 		}
 
 		tcpServer := transport.NewTCPServer(s.ctx, tcpConfig, s.logger)
@@ -66,6 +69,9 @@ func (s *Server) Start() {
 			MaxFrameSize:     s.config.MaxFrameSize,
 			MaxReceiveBuffer: s.config.MaxReceiveBuffer,
 			MaxStreamBuffer:  s.config.MaxStreamBuffer,
+			Sniffing:         s.config.Sniffer,
+			WebPort:          s.config.WebPort,
+			SnifferLog:       s.config.SnifferLog,
 		}
 
 		tcpMuxServer := transport.NewTcpMuxServer(s.ctx, tcpMuxConfig, s.logger)
@@ -80,6 +86,9 @@ func (s *Server) Start() {
 			Token:          s.config.Token,
 			ChannelSize:    s.config.ChannelSize,
 			Ports:          s.config.Ports,
+			Sniffing:       s.config.Sniffer,
+			WebPort:        s.config.WebPort,
+			SnifferLog:     s.config.SnifferLog,
 		}
 
 		wsServer := transport.NewWSServer(s.ctx, wsConfig, s.logger)

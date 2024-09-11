@@ -20,6 +20,8 @@ const ( // Default values
 	defaultMaxFrameSize     = 32768   // 32KB
 	defaultMaxReceiveBuffer = 4194304 // 4MB
 	defaultMaxStreamBuffer  = 65536   // 256KB
+	defaultWebPort          = 2060
+	defaultSnifferLog       = "backhaul.json"
 )
 
 func applyDefaults(cfg *config.Config) {
@@ -121,6 +123,20 @@ func applyDefaults(cfg *config.Config) {
 	}
 	if cfg.Client.MaxStreamBuffer <= 0 {
 		cfg.Client.MaxStreamBuffer = defaultMaxStreamBuffer
+	}
+	// WebPort
+	if cfg.Server.WebPort < 22 {
+		cfg.Server.WebPort = defaultWebPort
+	}
+	if cfg.Client.WebPort < 22 {
+		cfg.Client.WebPort = defaultWebPort
+	}
+	// Snifferlog
+	if cfg.Server.SnifferLog == "" {
+		cfg.Server.SnifferLog = defaultSnifferLog
+	}
+	if cfg.Client.SnifferLog == "" {
+		cfg.Client.SnifferLog = defaultSnifferLog
 	}
 
 }

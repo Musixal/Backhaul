@@ -22,6 +22,7 @@ type TcpTransport struct {
 	restartMutex   sync.Mutex
 	heartbeatSig   string
 	chanSignal     string
+	usageMonitor   *utils.Usage
 }
 type TcpConfig struct {
 	RemoteAddr    string
@@ -30,6 +31,9 @@ type TcpConfig struct {
 	RetryInterval time.Duration
 	Token         string
 	Forwarder     map[int]string
+	Sniffing      bool
+	WebPort       int
+	SnifferLog    string
 }
 
 func NewTCPClient(parentCtx context.Context, config *TcpConfig, logger *logrus.Logger) *TcpTransport {
@@ -46,7 +50,7 @@ func NewTCPClient(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		timeout:        5 * time.Second, // Default timeout
 		heartbeatSig:   "0",             // Default heartbeat signal
 		chanSignal:     "1",             // Default channel signal
-
+		usageMonitor:   utils.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
 	}
 
 	return client
@@ -72,6 +76,7 @@ func (c *TcpTransport) Restart() {
 
 	// Re-initialize variables
 	c.controlChannel = nil
+	c.usageMonitor = utils.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.logger)
 
 	go c.ChannelDialer()
 
@@ -123,6 +128,11 @@ func (c *TcpTransport) ChannelDialer() {
 				// Resetting the deadline (removes any existing deadline)
 				tunnelTCPConn.SetReadDeadline(time.Time{})
 				go c.channelListener()
+
+				if c.config.Sniffing {
+					go c.usageMonitor.Monitor()
+				}
+
 				return
 			} else {
 				c.logger.Errorf("Invalid token received. Expected: %s, Received: %s. Retrying...", c.config.Token, message)
@@ -220,7 +230,7 @@ func (c *TcpTransport) localDialer(tunnelConnection net.Conn, port uint16) {
 			return
 		}
 		c.logger.Debugf("connected to local address %s successfully", localAddress)
-		go utils.ConnectionHandler(localConnection, tunnelConnection, c.logger)
+		go utils.ConnectionHandler(localConnection, tunnelConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffing)
 	}
 }
 

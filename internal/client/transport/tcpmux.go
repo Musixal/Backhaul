@@ -21,6 +21,7 @@ type TcpMuxTransport struct {
 	smuxSession  []*smux.Session
 	restartMutex sync.Mutex
 	timeout      time.Duration
+	usageMonitor *utils.Usage
 }
 
 type TcpMuxConfig struct {
@@ -35,6 +36,9 @@ type TcpMuxConfig struct {
 	MaxFrameSize     int
 	MaxReceiveBuffer int
 	MaxStreamBuffer  int
+	Sniffing         bool
+	WebPort          int
+	SnifferLog       string
 }
 
 func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logrus.Logger) *TcpMuxTransport {
@@ -43,12 +47,13 @@ func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logru
 
 	// Initialize the TcpTransport struct
 	client := &TcpMuxTransport{
-		config:      config,
-		ctx:         ctx,
-		cancel:      cancel,
-		logger:      logger,
-		smuxSession: make([]*smux.Session, config.MuxSession),
-		timeout:     5 * time.Second, // Default timeout
+		config:       config,
+		ctx:          ctx,
+		cancel:       cancel,
+		logger:       logger,
+		smuxSession:  make([]*smux.Session, config.MuxSession),
+		timeout:      5 * time.Second, // Default timeout
+		usageMonitor: utils.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
 	}
 
 	return client
@@ -74,6 +79,7 @@ func (c *TcpMuxTransport) Restart() {
 
 	// Re-initialize variables
 	c.smuxSession = make([]*smux.Session, c.config.MuxSession)
+	c.usageMonitor = utils.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.logger)
 
 	go c.MuxDialer()
 
@@ -139,6 +145,10 @@ func (c *TcpMuxTransport) MuxDialer() {
 
 			}
 		}
+	}
+
+	if c.config.Sniffing {
+		go c.usageMonitor.Monitor()
 	}
 }
 
@@ -233,6 +243,6 @@ func (c *TcpMuxTransport) localDialer(tunnelConnection net.Conn, port uint16) {
 			return
 		}
 		c.logger.Debugf("connected to local address %s successfully", localAddress)
-		go utils.ConnectionHandler(localConnection, tunnelConnection, c.logger)
+		go utils.ConnectionHandler(localConnection, tunnelConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffing)
 	}
 }

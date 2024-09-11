@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backhaul</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                margin: 20px;
+            }
+
+            table {
+                width: 60%;
+                border-collapse: collapse;
+                margin: 25px 0;
+                font-size: 18px;
+                text-align: left;
+            }
+
+            table th,
+            table td {
+                padding: 12px;
+                border: 1px solid #ddd;
+            }
+
+            table th {
+                background-color: #f4f4f4;
+            }
+
+            table tr:nth-child(even) {
+                background-color: #f9f9f9;
+            }
+        </style>
+</head>
+
+<body>
+    <h1>Port Usage</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Port</th>
+                <th>Usage</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .}}
+            <tr>
+                <td>{{.Port}}</td>
+                <td>{{.ReadableUsage}}</td>
+            </tr>
+            {{else}}
+            <tr>
+                <td colspan="2">No data available</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</body>
+
+</html>
