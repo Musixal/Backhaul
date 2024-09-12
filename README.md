@@ -256,7 +256,7 @@ You can configure the `server` and `client` to use different transport protocols
 
 * **Details**:
 
-   * Refer to the next section for instructions on generating tls_cert and tls_key.
+   * Refer to the next section for instructions on generating `tls_cert` and `tls_key`.
 
 ## Generating a Self-Signed TLS Certificate with OpenSSL
 
