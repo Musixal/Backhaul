@@ -80,8 +80,8 @@ To start using the solution, you'll need to configure both server and client com
     sniffer = false               # Enable or disable network sniffing for monitoring data. (optional, default false)
     web_port = 2060               # Port number for the web interface or monitoring interface. (optional, default 2060).
     sniffer_log = "backhaul.json" # Filename used to store network traffic and usage data logs. (optional, default backhaul.json)
-    tls_cert = "server.crt"       # Path to the TLS certificate file for wss. (mandatory).
-    tls_key = "server.key"        #Path to the TLS private key file for wss.(mandatory).
+    tls_cert = "/root/server.crt"       # Path to the TLS certificate file for wss. (mandatory).
+    tls_key = "/root/server.key"        #Path to the TLS private key file for wss.(mandatory).
 
     ports = [ # Local to remote port mapping in this format LocalPort=RemotePort (mandatory).
         "4000=5201", # Bind to all local ip addresses.
@@ -238,8 +238,8 @@ You can configure the `server` and `client` to use different transport protocols
    channel_size = 2048
    connection_pool = 8
    nodelay = true 
-   tls_cert = "server.crt"      
-   tls_key = "server.key"
+   tls_cert = "/root/server.crt"      
+   tls_key = "/root/server.key"
 
    ports = []
    ```
