@@ -18,10 +18,18 @@ builds:
     env:
       - CGO_ENABLED=0
 
-
 archives:
   - format: tar.gz
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    goos:
+      - linux
+      - darwin
+
+  - format: zip
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    goos:
+      - windows
+
 
 release:
   github:
