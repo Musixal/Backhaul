@@ -257,7 +257,6 @@ You can configure the `server` and `client` to use different transport protocols
 * **Details**:
 
    * Refer to the next section for instructions on generating `tls_cert` and `tls_key`.
-   * For using WSS with Cloudflare, it is important to set the encryption mode to "flexible."
 
 ## Generating a Self-Signed TLS Certificate with OpenSSL
 
