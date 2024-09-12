@@ -136,7 +136,9 @@ func (s *WsTransport) heartbeat() {
 				go s.Restart()
 				return
 			}
+			s.mu.Lock()
 			err := s.controlChannel.WriteMessage(websocket.TextMessage, []byte(s.heartbeatSig))
+			s.mu.Unlock()
 			if err != nil {
 				s.logger.Errorf("Failed to send heartbeat signal. Error: %v. Restarting server...", err)
 				go s.Restart()
