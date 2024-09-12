@@ -5,10 +5,11 @@ import (
 	"io"
 	"net"
 
+	"github.com/musix/backhaul/internal/web"
 	"github.com/sirupsen/logrus"
 )
 
-func ConnectionHandler(from net.Conn, to net.Conn, logger *logrus.Logger, usage *Usage, remotePort int, sniffing bool) {
+func ConnectionHandler(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffing bool) {
 	done := make(chan struct{})
 
 	go func() {
@@ -25,7 +26,7 @@ func ConnectionHandler(from net.Conn, to net.Conn, logger *logrus.Logger, usage 
 }
 
 // Using direct Read and Write for transferring data
-func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *Usage, remotePort int, sniffing bool) {
+func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffing bool) {
 	buf := make([]byte, 16*1024) // 16K
 	for {
 		// Read data from the source connection

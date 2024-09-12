@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/musix/backhaul/internal/utils"
+	"github.com/musix/backhaul/internal/web"
 
 	"github.com/sirupsen/logrus"
 )
@@ -27,7 +28,7 @@ type TcpTransport struct {
 	heartbeatDuration time.Duration
 	heartbeatSig      string
 	chanSignal        string
-	usageMonitor      *utils.Usage
+	usageMonitor      *web.Usage
 }
 
 type TcpConfig struct {
@@ -60,7 +61,7 @@ func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		heartbeatDuration: 30 * time.Second, // Default heartbeat duration
 		heartbeatSig:      "0",              // Default heartbeat signal
 		chanSignal:        "1",              // Default channel signal
-		usageMonitor:      utils.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
+		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
 	}
 
 	return server
@@ -88,7 +89,7 @@ func (s *TcpTransport) Restart() {
 	s.tunnelChannel = make(chan net.Conn, s.config.ChannelSize)
 	s.getNewConnChan = make(chan struct{}, s.config.ChannelSize)
 	s.controlChannel = nil
-	s.usageMonitor = utils.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.logger)
+	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.logger)
 
 	go s.TunnelListener()
 

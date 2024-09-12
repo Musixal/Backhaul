@@ -12,6 +12,7 @@ import (
 
 	"github.com/musix/backhaul/internal/config"
 	"github.com/musix/backhaul/internal/utils"
+	"github.com/musix/backhaul/internal/web"
 
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
@@ -31,7 +32,7 @@ type WsTransport struct {
 	heartbeatSig      string
 	chanSignal        string
 	mu                sync.Mutex
-	usageMonitor      *utils.Usage
+	usageMonitor      *web.Usage
 }
 
 type WsConfig struct {
@@ -67,7 +68,7 @@ func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 		heartbeatDuration: 30 * time.Second, // Default heartbeat duration
 		heartbeatSig:      "0",              // Default heartbeat signal
 		chanSignal:        "1",              // Default channel signal
-		usageMonitor:      utils.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
+		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
 	}
 
 	return server
@@ -94,7 +95,7 @@ func (s *WsTransport) Restart() {
 	s.tunnelChannel = make(chan *websocket.Conn, s.config.ChannelSize)
 	s.getNewConnChan = make(chan struct{}, s.config.ChannelSize)
 	s.controlChannel = nil
-	s.usageMonitor = utils.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.logger)
+	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.logger)
 
 	go s.TunnelListener()
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/musix/backhaul/internal/utils"
+	"github.com/musix/backhaul/internal/web"
 
 	"github.com/sirupsen/logrus"
 	"github.com/xtaci/smux"
@@ -21,7 +22,7 @@ type TcpMuxTransport struct {
 	smuxSession  []*smux.Session
 	restartMutex sync.Mutex
 	timeout      time.Duration
-	usageMonitor *utils.Usage
+	usageMonitor *web.Usage
 }
 
 type TcpMuxConfig struct {
@@ -53,7 +54,7 @@ func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logru
 		logger:       logger,
 		smuxSession:  make([]*smux.Session, config.MuxSession),
 		timeout:      5 * time.Second, // Default timeout
-		usageMonitor: utils.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
+		usageMonitor: web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
 	}
 
 	return client
@@ -79,7 +80,7 @@ func (c *TcpMuxTransport) Restart() {
 
 	// Re-initialize variables
 	c.smuxSession = make([]*smux.Session, c.config.MuxSession)
-	c.usageMonitor = utils.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.logger)
+	c.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.logger)
 
 	go c.MuxDialer()
 

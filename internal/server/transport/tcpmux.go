@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/musix/backhaul/internal/utils"
+	"github.com/musix/backhaul/internal/web"
 
 	"github.com/sirupsen/logrus"
 	"github.com/xtaci/smux"
@@ -24,7 +25,7 @@ type TcpMuxTransport struct {
 	smuxSession  []*smux.Session
 	restartMutex sync.Mutex
 	timeout      time.Duration
-	usageMonitor *utils.Usage
+	usageMonitor *web.Usage
 }
 
 type TcpMuxConfig struct {
@@ -56,7 +57,7 @@ func NewTcpMuxServer(parentCtx context.Context, config *TcpMuxConfig, logger *lo
 		logger:       logger,
 		timeout:      2 * time.Second, // Default timeout
 		smuxSession:  make([]*smux.Session, config.MuxSession),
-		usageMonitor: utils.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
+		usageMonitor: web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
 	}
 
 	return server
@@ -82,7 +83,7 @@ func (s *TcpMuxTransport) Restart() {
 
 	// Re-initialize variables
 	s.smuxSession = make([]*smux.Session, s.config.MuxSession)
-	s.usageMonitor = utils.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.logger)
+	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.logger)
 
 	go s.TunnelListener()
 

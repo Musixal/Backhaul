@@ -12,6 +12,7 @@ import (
 
 	"github.com/musix/backhaul/internal/config"
 	"github.com/musix/backhaul/internal/utils"
+	"github.com/musix/backhaul/internal/web"
 
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
@@ -27,7 +28,7 @@ type WsTransport struct {
 	restartMutex   sync.Mutex
 	heartbeatSig   string
 	chanSignal     string
-	usageMonitor   *utils.Usage
+	usageMonitor   *web.Usage
 }
 type WsConfig struct {
 	RemoteAddr    string
@@ -56,7 +57,7 @@ func NewWSClient(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 		timeout:        5 * time.Second, // Default timeout
 		heartbeatSig:   "0",             // Default heartbeat signal
 		chanSignal:     "1",             // Default channel signal
-		usageMonitor:   utils.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
+		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
 	}
 
 	return client
@@ -82,7 +83,7 @@ func (c *WsTransport) Restart() {
 
 	// Re-initialize variables
 	c.controlChannel = nil
-	c.usageMonitor = utils.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.logger)
+	c.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.logger)
 
 	go c.ChannelDialer()
 

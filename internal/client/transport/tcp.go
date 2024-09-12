@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/musix/backhaul/internal/utils"
+	"github.com/musix/backhaul/internal/web"
 
 	"github.com/sirupsen/logrus"
 )
@@ -22,7 +23,7 @@ type TcpTransport struct {
 	restartMutex   sync.Mutex
 	heartbeatSig   string
 	chanSignal     string
-	usageMonitor   *utils.Usage
+	usageMonitor   *web.Usage
 }
 type TcpConfig struct {
 	RemoteAddr    string
@@ -50,7 +51,7 @@ func NewTCPClient(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		timeout:        5 * time.Second, // Default timeout
 		heartbeatSig:   "0",             // Default heartbeat signal
 		chanSignal:     "1",             // Default channel signal
-		usageMonitor:   utils.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
+		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
 	}
 
 	return client
@@ -76,7 +77,7 @@ func (c *TcpTransport) Restart() {
 
 	// Re-initialize variables
 	c.controlChannel = nil
-	c.usageMonitor = utils.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.logger)
+	c.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.logger)
 
 	go c.ChannelDialer()
 
