@@ -32,6 +32,7 @@ type ServerConfig struct {
 	SnifferLog       string        `toml:"sniffer_log"`
 	TLSCertFile      string        `toml:"tls_cert"`
 	TLSKeyFile       string        `toml:"tls_key"`
+	Heartbeat        int           `toml:"heartbeat"`
 }
 
 // ClientConfig represents the configuration for the client.

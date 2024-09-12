@@ -72,6 +72,7 @@ To start using the solution, you'll need to configure both server and client com
     channel_size = 2048           # Tunnel channel size. Excess connections are discarded. Only for tcp and ws mode (optional, default: 2048).
     connection_pool = 8           # Number of pre-established connections. Only for tcp and ws mode (optional, default: 8).
     log_level = "info"            # Log level ("panic", "fatal", "error", "warn", "info", "debug", "trace", optional, default: "info").
+    heartbeat = 20                # In seconds. Ping interval for tunnel stability. Min: 1s. Not used in TcpMux. (Optional, default: 20s)
     mux_session = 1               # Number of mux sessions for tcpmux. (optional, default: 1).
     mux_version = 1               # TCPMux protocol version (1 or 2). Version 2 may have extra features. (optional)
     mux_framesize = 32768         # 32 KB. The maximum size of a frame that can be sent over a connection. (optional)
@@ -80,8 +81,8 @@ To start using the solution, you'll need to configure both server and client com
     sniffer = false               # Enable or disable network sniffing for monitoring data. (optional, default false)
     web_port = 2060               # Port number for the web interface or monitoring interface. (optional, default 2060).
     sniffer_log = "backhaul.json" # Filename used to store network traffic and usage data logs. (optional, default backhaul.json)
-    tls_cert = "/root/server.crt"       # Path to the TLS certificate file for wss. (mandatory).
-    tls_key = "/root/server.key"        #Path to the TLS private key file for wss.(mandatory).
+    tls_cert = "/root/server.crt" # Path to the TLS certificate file for wss. (mandatory).
+    tls_key = "/root/server.key"  # Path to the TLS private key file for wss.(mandatory).
 
     ports = [ # Local to remote port mapping in this format LocalPort=RemotePort (mandatory).
         "4000=5201", # Bind to all local ip addresses.

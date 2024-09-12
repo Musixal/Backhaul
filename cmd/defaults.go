@@ -22,6 +22,7 @@ const ( // Default values
 	defaultMaxStreamBuffer  = 65536   // 256KB
 	defaultWebPort          = 2060
 	defaultSnifferLog       = "backhaul.json"
+	deafultHeartbeat        = 20 // 20 seconds
 )
 
 func applyDefaults(cfg *config.Config) {
@@ -137,6 +138,10 @@ func applyDefaults(cfg *config.Config) {
 	}
 	if cfg.Client.SnifferLog == "" {
 		cfg.Client.SnifferLog = defaultSnifferLog
+	}
+	// Heartbeat
+	if cfg.Server.Heartbeat < 1 { // Minimum accepted interval is 1 second
+		cfg.Server.Heartbeat = deafultHeartbeat
 	}
 
 }

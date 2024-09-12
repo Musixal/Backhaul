@@ -42,6 +42,7 @@ type TcpConfig struct {
 	Sniffing       bool
 	WebPort        int
 	SnifferLog     string
+	Heartbeat      int // in seconds
 }
 
 func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.Logger) *TcpTransport {
@@ -56,11 +57,11 @@ func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		logger:            logger,
 		tunnelChannel:     make(chan net.Conn, config.ChannelSize),
 		getNewConnChan:    make(chan struct{}, config.ChannelSize),
-		controlChannel:    nil,              // will be set when a control connection is established
-		timeout:           3 * time.Second,  // Default timeout
-		heartbeatDuration: 30 * time.Second, // Default heartbeat duration
-		heartbeatSig:      "0",              // Default heartbeat signal
-		chanSignal:        "1",              // Default channel signal
+		controlChannel:    nil,                                           // will be set when a control connection is established
+		timeout:           3 * time.Second,                               // Default timeout
+		heartbeatDuration: time.Duration(config.Heartbeat) * time.Second, // Heartbeat duration
+		heartbeatSig:      "0",                                           // Default heartbeat signal
+		chanSignal:        "1",                                           // Default channel signal
 		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
 	}
 

@@ -49,6 +49,7 @@ type WsConfig struct {
 	TLSCertFile    string               // Path to the TLS certificate file
 	TLSKeyFile     string               // Path to the TLS key file
 	Mode           config.TransportType // ws or wss
+	Heartbeat      int                  // in seconds
 }
 
 func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Logger) *WsTransport {
@@ -63,11 +64,11 @@ func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 		logger:            logger,
 		tunnelChannel:     make(chan *websocket.Conn, config.ChannelSize),
 		getNewConnChan:    make(chan struct{}, config.ChannelSize),
-		controlChannel:    nil,              // will be set when a control connection is established
-		timeout:           2 * time.Second,  // Default timeout
-		heartbeatDuration: 30 * time.Second, // Default heartbeat duration
-		heartbeatSig:      "0",              // Default heartbeat signal
-		chanSignal:        "1",              // Default channel signal
+		controlChannel:    nil,                                           // will be set when a control connection is established
+		timeout:           2 * time.Second,                               // Default timeout
+		heartbeatDuration: time.Duration(config.Heartbeat) * time.Second, // Default heartbeat duration
+		heartbeatSig:      "0",                                           // Default heartbeat signal
+		chanSignal:        "1",                                           // Default channel signal
 		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
 	}
 

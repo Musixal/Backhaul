@@ -51,6 +51,7 @@ func (s *Server) Start() {
 			Sniffing:       s.config.Sniffer,
 			WebPort:        s.config.WebPort,
 			SnifferLog:     s.config.SnifferLog,
+			Heartbeat:      s.config.Heartbeat,
 		}
 
 		tcpServer := transport.NewTCPServer(s.ctx, tcpConfig, s.logger)
@@ -92,6 +93,7 @@ func (s *Server) Start() {
 			Mode:           s.config.Transport,
 			TLSCertFile:    s.config.TLSCertFile,
 			TLSKeyFile:     s.config.TLSKeyFile,
+			Heartbeat:      s.config.Heartbeat,
 		}
 
 		wsServer := transport.NewWSServer(s.ctx, wsConfig, s.logger)
