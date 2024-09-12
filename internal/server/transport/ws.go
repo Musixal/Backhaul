@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/musix/backhaul/internal/config"
 	"github.com/musix/backhaul/internal/utils"
 
 	"github.com/gorilla/websocket"
@@ -44,6 +45,9 @@ type WsConfig struct {
 	Sniffing       bool
 	WebPort        int
 	SnifferLog     string
+	TLSCertFile    string               // Path to the TLS certificate file
+	TLSKeyFile     string               // Path to the TLS key file
+	Mode           config.TransportType // ws or wss
 }
 
 func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Logger) *WsTransport {
@@ -195,6 +199,11 @@ func (s *WsTransport) TunnelListener() {
 		},
 	}
 
+	// TLS configuration using the certificate and key files
+	// tlsConfig := &tls.Config{
+	// 	MinVersion: tls.VersionTLS12,
+	// }
+
 	// Create an HTTP server
 	server := &http.Server{
 		Addr:        addr,
@@ -243,12 +252,21 @@ func (s *WsTransport) TunnelListener() {
 		}),
 	}
 
-	go func() {
-		s.logger.Infof("websocket server starting, listening on %s", addr)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			s.logger.Fatalf("failed to listen on %s: %v", addr, err)
-		}
-	}()
+	if s.config.Mode == config.WS {
+		go func() {
+			s.logger.Infof("websocket server starting, listening on %s", addr)
+			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				s.logger.Fatalf("failed to listen on %s: %v", addr, err)
+			}
+		}()
+	} else {
+		go func() {
+			s.logger.Infof("wss server starting, listening on %s", addr)
+			if err := server.ListenAndServeTLS(s.config.TLSCertFile, s.config.TLSKeyFile); err != nil && err != http.ErrServerClosed {
+				s.logger.Fatalf("failed to listen on %s: %v", addr, err)
+			}
+		}()
+	}
 
 	<-s.ctx.Done()
 
@@ -340,7 +358,7 @@ func (s *WsTransport) handleWSSession(remotePort int, acceptChan chan net.Conn) 
 				case tunnelConnection := <-s.tunnelChannel:
 					// Send the target port over the WebSocket connection
 					if err := utils.SendWebSocketInt(tunnelConnection, uint16(remotePort)); err != nil {
-						s.logger.Warnf("%v", err) // failed to send port number
+						s.logger.Debugf("%v", err) // failed to send port number
 						tunnelConnection.Close()
 						continue innerloop
 					}

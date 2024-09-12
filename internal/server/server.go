@@ -77,7 +77,7 @@ func (s *Server) Start() {
 		tcpMuxServer := transport.NewTcpMuxServer(s.ctx, tcpMuxConfig, s.logger)
 		go tcpMuxServer.TunnelListener()
 
-	} else if s.config.Transport == config.WS {
+	} else if s.config.Transport == config.WS || s.config.Transport == config.WSS {
 		wsConfig := &transport.WsConfig{
 			BindAddr:       s.config.BindAddr,
 			Nodelay:        s.config.Nodelay,
@@ -89,6 +89,9 @@ func (s *Server) Start() {
 			Sniffing:       s.config.Sniffer,
 			WebPort:        s.config.WebPort,
 			SnifferLog:     s.config.SnifferLog,
+			Mode:           s.config.Transport,
+			TLSCertFile:    s.config.TLSCertFile,
+			TLSKeyFile:     s.config.TLSKeyFile,
 		}
 
 		wsServer := transport.NewWSServer(s.ctx, wsConfig, s.logger)

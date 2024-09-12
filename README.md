@@ -15,10 +15,12 @@ Welcome to the **`Backhaul`** project! This project provides a high-performance 
       - [TCP Configuration](#tcp-configuration)
       - [TCP Multiplexing Configuration](#tcp-multiplexing-configuration)
       - [WebSocket Configuration](#websocket-configuration)
-4. [Running backhaul as a service](#running-backhaul-as-a-service)
-5. [FAQ](#faq)
-6. [License](#license)
-7. [Donation](#donation)
+      - [Secure WebSocket Configuration](#secure-websocket-configuration)
+4. [Generating a Self-Signed TLS Certificate with OpenSSL](#generating-a-self-signed-tls-certificate-with-openssl)
+5. [Running backhaul as a service](#running-backhaul-as-a-service)
+6. [FAQ](#faq)
+7. [License](#license)
+8. [Donation](#donation)
 
 ---
 
@@ -71,13 +73,15 @@ To start using the solution, you'll need to configure both server and client com
     connection_pool = 8           # Number of pre-established connections. Only for tcp and ws mode (optional, default: 8).
     log_level = "info"            # Log level ("panic", "fatal", "error", "warn", "info", "debug", "trace", optional, default: "info").
     mux_session = 1               # Number of mux sessions for tcpmux. (optional, default: 1).
-    mux_version = 1               # The tcpmux protocol version. Acceptable values are 1 or 2. Version 2 may include additional features or optimizations. (optional)
+    mux_version = 1               # TCPMux protocol version (1 or 2). Version 2 may have extra features. (optional)
     mux_framesize = 32768         # 32 KB. The maximum size of a frame that can be sent over a connection. (optional)
     mux_recievebuffer = 4194304   # 4 MB. The maximum buffer size for incoming data per connection. (optional)
     mux_streambuffer = 65536      # 256 KB. The maximum buffer size per individual stream within a connection. (optional)
     sniffer = false               # Enable or disable network sniffing for monitoring data. (optional, default false)
     web_port = 2060               # Port number for the web interface or monitoring interface. (optional, default 2060).
     sniffer_log = "backhaul.json" # Filename used to store network traffic and usage data logs. (optional, default backhaul.json)
+    tls_cert = "server.crt"       # Path to the TLS certificate file for wss. (mandatory).
+    tls_key = "server.key"        #Path to the TLS private key file for wss.(mandatory).
 
     ports = [ # Local to remote port mapping in this format LocalPort=RemotePort (mandatory).
         "4000=5201", # Bind to all local ip addresses.
@@ -103,7 +107,7 @@ To start using the solution, you'll need to configure both server and client com
    retry_interval = 1            # Retry interval in seconds (optional, default: 1).
    log_level = "info"            # Log level ("panic", "fatal", "error", "warn", "info", "debug", "trace", optional, default: "info").
    mux_session = 1               # Number of mux sessions for tcpmux. (optional, default: 1).
-   mux_version = 1               # The tcpmux protocol version. Acceptable values are 1 or 2. Version 2 may include additional features or optimizations. (optional)
+   mux_version = 1               # TCPMux protocol version (1 or 2). Version 2 may have extra features. (optional)
    mux_framesize = 32768         # 32 KB. The maximum size of a frame that can be sent over a connection. (optional)
    mux_recievebuffer = 4194304   # 4 MB. The maximum buffer size for incoming data per connection. (optional)
    mux_streambuffer = 65536      # 256 KB. The maximum buffer size per individual stream within a connection. (optional)
@@ -200,7 +204,7 @@ You can configure the `server` and `client` to use different transport protocols
 
    ```toml
    [server]
-   bind_addr = "0.0.0.0:3080"
+   bind_addr = "0.0.0.0:8080"
    transport = "ws"
    token = "your_token" 
    channel_size = 2048
@@ -213,7 +217,7 @@ You can configure the `server` and `client` to use different transport protocols
 
    ```toml
    [client]
-   remote_addr = "0.0.0.0:3080"
+   remote_addr = "0.0.0.0:8080"
    transport = "ws"
    token = "your_token" 
    nodelay = true 
@@ -223,6 +227,85 @@ You can configure the `server` and `client` to use different transport protocols
 
    * Refer to TCP configuration for more information.
 
+#### Secure WebSocket Configuration
+* **Server**:
+
+   ```toml
+   [server]
+   bind_addr = "0.0.0.0:443"
+   transport = "wss"
+   token = "your_token" 
+   channel_size = 2048
+   connection_pool = 8
+   nodelay = true 
+   tls_cert = "server.crt"      
+   tls_key = "server.key"
+
+   ports = []
+   ```
+
+* **Client**:
+
+   ```toml
+   [client]
+   remote_addr = "0.0.0.0:443"
+   transport = "wss"
+   token = "your_token" 
+   nodelay = true 
+   ```
+
+* **Details**:
+
+   * Refer to the next section for instructions on generating tls_cert and tls_key.
+
+## Generating a Self-Signed TLS Certificate with OpenSSL
+
+To generate a TLS certificate and key, you can use tools like OpenSSL. Here’s a step-by-step guide on how to create a self-signed certificate and key using OpenSSL:
+
+### Step 1: Install OpenSSL
+
+If you don't already have OpenSSL installed, you can install it using your system's package manager.
+
+- **On Ubuntu/Debian**:
+  ```bash
+  sudo apt-get install openssl
+  ```
+### Step 2: Generate a Private Key
+To generate a 2048-bit RSA private key, run the following command:
+  ```bash
+openssl genpkey -algorithm RSA -out server.key -pkeyopt rsa_keygen_bits:2048
+  ```
+This will create a file named `server.key`, which is your private key.
+### Step 3: Generate a Certificate Signing Request (CSR)
+
+Create a Certificate Signing Request (CSR) using the private key. This CSR is used to generate the SSL certificate:
+  ```bash
+openssl req -new -key server.key -out server.csr
+  ```
+
+You will be prompted to enter information for the CSR. For the common name (CN), use the domain name or IP address where your server will be hosted. Example:
+```
+Country Name (2 letter code) [AU]:US
+State or Province Name (full name) [Some-State]:California
+Locality Name (eg, city) []:San Francisco
+Organization Name (eg, company) [Internet Widgits Pty Ltd]:Your Company Name
+Organizational Unit Name (eg, section) []:
+Common Name (e.g. server FQDN or YOUR name) []:example.com
+Email Address []:
+```
+
+### Step 4: Generate a Self-Signed Certificate
+
+Use the CSR and private key to generate a self-signed certificate. Specify the validity period (in days):
+  ```bash
+openssl x509 -req -in server.csr -signkey server.key -out server.crt -days 365
+  ```
+This will generate a certificate named `server.crt`, valid for 365 days.
+### Recap of the Files Generated:
+
+* `server.key`: Your private key.
+* `server.csr`: The certificate signing request (used to generate the certificate).
+* `server.crt`: Your self-signed TLS certificate.
 
 ## Running backhaul as a service
 

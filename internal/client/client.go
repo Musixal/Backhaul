@@ -81,7 +81,7 @@ func (c *Client) Start() {
 		tcpMuxClient := transport.NewMuxClient(c.ctx, tcpMuxConfig, c.logger)
 		go tcpMuxClient.MuxDialer()
 
-	} else if c.config.Transport == config.WS {
+	} else if c.config.Transport == config.WS || c.config.Transport == config.WSS {
 		WsConfig := &transport.WsConfig{
 			RemoteAddr:    c.config.RemoteAddr,
 			Nodelay:       c.config.Nodelay,
@@ -92,6 +92,7 @@ func (c *Client) Start() {
 			Sniffing:      c.config.Sniffer,
 			WebPort:       c.config.WebPort,
 			SnifferLog:    c.config.SnifferLog,
+			Mode:          c.config.Transport,
 		}
 		WsClient := transport.NewWSClient(c.ctx, WsConfig, c.logger)
 		go WsClient.ChannelDialer()

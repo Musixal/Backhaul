@@ -27,7 +27,7 @@ const ( // Default values
 func applyDefaults(cfg *config.Config) {
 	// Transport
 	switch cfg.Server.Transport {
-	case config.TCP, config.TCPMUX, config.WS: // valid values
+	case config.TCP, config.TCPMUX, config.WS, config.WSS: // valid values
 	case "":
 		cfg.Server.Transport = defaultTransport
 	default:
@@ -36,7 +36,7 @@ func applyDefaults(cfg *config.Config) {
 	}
 
 	switch cfg.Client.Transport {
-	case config.TCP, config.TCPMUX, config.WS: //valid values
+	case config.TCP, config.TCPMUX, config.WS, config.WSS: //valid values
 	case "":
 		cfg.Client.Transport = defaultTransport
 	default:
