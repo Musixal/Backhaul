@@ -232,7 +232,7 @@ You can configure the `server` and `client` to use different transport protocols
 
    ```toml
    [server]
-   bind_addr = "0.0.0.0:443"
+   bind_addr = "0.0.0.0:8443"
    transport = "wss"
    token = "your_token" 
    channel_size = 2048
@@ -248,7 +248,7 @@ You can configure the `server` and `client` to use different transport protocols
 
    ```toml
    [client]
-   remote_addr = "0.0.0.0:443"
+   remote_addr = "0.0.0.0:8443"
    transport = "wss"
    token = "your_token" 
    nodelay = true 
