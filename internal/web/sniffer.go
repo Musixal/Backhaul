@@ -23,6 +23,7 @@ type Usage struct {
 	server      *http.Server
 	logger      *logrus.Logger
 	snifferLog  string
+	mu          sync.Mutex
 }
 
 type PortUsage struct {
@@ -38,18 +39,14 @@ func NewDataStore(listenAddr string, shutdownCtx context.Context, snifferLog str
 		cancelFunc:  cancel,
 		logger:      logger,
 		snifferLog:  snifferLog,
+		mu:          sync.Mutex{},
 	}
 	return u
 }
 
 func (m *Usage) Monitor() {
-	go m.startDataSaver()
 	mux := http.NewServeMux()
-	// Serve static files, not for now!
-	//mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
-
-	// Set up routes
-	mux.HandleFunc("/", m.handleIndex)
+	mux.HandleFunc("/", m.handleIndex) // Set up routes
 
 	m.server = &http.Server{
 		Addr:    m.listenAddr,
@@ -57,7 +54,6 @@ func (m *Usage) Monitor() {
 	}
 
 	go func() {
-		// Listen for shutdown signal from context
 		<-m.shutdownCtx.Done()
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -69,6 +65,20 @@ func (m *Usage) Monitor() {
 		}
 	}()
 
+	go func() {
+		ticker := time.NewTicker(3 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				go m.saveUsageData()
+			case <-m.shutdownCtx.Done():
+				return
+			}
+		}
+	}()
+
 	// Start the server
 	m.logger.Info("sniffer server starting at", m.listenAddr)
 	if err := m.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -76,51 +86,11 @@ func (m *Usage) Monitor() {
 	}
 }
 
-func (m *Usage) AddOrUpdatePort(port int, usage uint64) {
-	// Retrieve current usage data for the port
-	value, ok := m.dataStore.Load(port)
-	if ok {
-		// Port exists, update usage
-		portUsage := value.(PortUsage)
-		portUsage.Usage += usage
-		m.dataStore.Store(port, portUsage)
-	} else {
-		// Port does not exist, create new entry
-		m.dataStore.Store(port, PortUsage{Port: port, Usage: usage})
-	}
-}
-
-func (m *Usage) GetUsage() []PortUsage {
-	var usageData []PortUsage
-
-	// Open the JSON file
-	file, err := os.Open(m.snifferLog)
-	if err != nil {
-		m.logger.Error("error opening JSON file: %v", err)
-		return nil
-	}
-	defer file.Close()
-
-	// Decode the JSON file into the usageData slice
-	err = json.NewDecoder(file).Decode(&usageData)
-	if err != nil {
-		m.logger.Error("error decoding JSON data: %v", err)
-		return nil
-	}
-
-	// Sort usageData by Port in ascending order
-	sort.Slice(usageData, func(i, j int) bool {
-		return usageData[i].Port < usageData[j].Port
-	})
-
-	return usageData
-}
-
 //go:embed index.html
 var indexHTML embed.FS
 
 func (m *Usage) handleIndex(w http.ResponseWriter, r *http.Request) {
-	usageData := m.GetUsage()
+	usageData := m.getUsageFromFile()
 
 	// Parse the embedded template
 	tmpl, err := template.ParseFS(indexHTML, "index.html")
@@ -138,40 +108,20 @@ func (m *Usage) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// converts the byte usage to a human-readable format
-func usageDataWithReadableUsage(usageData []PortUsage) []struct {
-	Port          int
-	ReadableUsage string
-} {
-	var result []struct {
-		Port          int
-		ReadableUsage string
-	}
+func (m *Usage) AddOrUpdatePort(port int, usage uint64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	for _, portUsage := range usageData {
-		result = append(result, struct {
-			Port          int
-			ReadableUsage string
-		}{
-			Port:          portUsage.Port,
-			ReadableUsage: ConvertBytesToReadable(int64(portUsage.Usage)),
-		})
-	}
-
-	return result
-}
-
-func (m *Usage) startDataSaver() {
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			m.saveUsageData()
-		case <-m.shutdownCtx.Done():
-			return
-		}
+	// Retrieve current usage data for the port
+	value, ok := m.dataStore.Load(port)
+	if ok {
+		// Port exists, update usage
+		portUsage := value.(PortUsage)
+		portUsage.Usage += usage
+		m.dataStore.Store(port, portUsage)
+	} else {
+		// Port does not exist, create new entry
+		m.dataStore.Store(port, PortUsage{Port: port, Usage: usage})
 	}
 }
 
@@ -236,8 +186,60 @@ func (m *Usage) saveUsageData() {
 	}
 }
 
+func (m *Usage) getUsageFromFile() []PortUsage {
+	var usageData []PortUsage
+
+	// Open the JSON file
+	file, err := os.Open(m.snifferLog)
+	if err != nil {
+		m.logger.Error("error opening JSON file: %v", err)
+		return nil
+	}
+	defer file.Close()
+
+	// Decode the JSON file into the usageData slice
+	err = json.NewDecoder(file).Decode(&usageData)
+	if err != nil {
+		m.logger.Error("error decoding JSON data: %v", err)
+		return nil
+	}
+
+	// Sort usageData by Port in ascending order
+	sort.Slice(usageData, func(i, j int) bool {
+		return usageData[i].Port < usageData[j].Port
+	})
+
+	return usageData
+}
+
+// converts the byte usage to a human-readable format
+func usageDataWithReadableUsage(usageData []PortUsage) []struct {
+	Port          int
+	ReadableUsage string
+} {
+	var result []struct {
+		Port          int
+		ReadableUsage string
+	}
+
+	for _, portUsage := range usageData {
+		result = append(result, struct {
+			Port          int
+			ReadableUsage string
+		}{
+			Port:          portUsage.Port,
+			ReadableUsage: convertBytesToReadable(int64(portUsage.Usage)),
+		})
+	}
+
+	return result
+}
+
 // collectUsageDataFromSyncMap gathers data from sync.Map
 func (m *Usage) collectUsageDataFromSyncMap() []PortUsage {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	var usageData []PortUsage
 	m.dataStore.Range(func(key, value interface{}) bool {
 		if portUsage, ok := value.(PortUsage); ok {
@@ -250,7 +252,7 @@ func (m *Usage) collectUsageDataFromSyncMap() []PortUsage {
 }
 
 // ConvertBytesToReadable converts bytes into a human-readable format (KB, MB, GB)
-func ConvertBytesToReadable(bytes int64) string {
+func convertBytesToReadable(bytes int64) string {
 	const (
 		KB = 1 << (10 * 1) // 1024 bytes
 		MB = 1 << (10 * 2) // 1024 KB
