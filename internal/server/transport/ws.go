@@ -23,7 +23,7 @@ type WsTransport struct {
 	ctx               context.Context
 	cancel            context.CancelFunc
 	logger            *logrus.Logger
-	tunnelChannel     chan *websocket.Conn
+	tunnelChannel     chan TunnelChannel
 	getNewConnChan    chan struct{}
 	controlChannel    *websocket.Conn
 	restartMutex      sync.Mutex
@@ -52,6 +52,12 @@ type WsConfig struct {
 	Heartbeat      int                  // in seconds
 }
 
+type TunnelChannel struct {
+	conn *websocket.Conn
+	ping chan struct{}
+	mu   *sync.Mutex
+}
+
 func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Logger) *WsTransport {
 	// Create a derived context from the parent context
 	ctx, cancel := context.WithCancel(parentCtx)
@@ -62,7 +68,7 @@ func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 		ctx:               ctx,
 		cancel:            cancel,
 		logger:            logger,
-		tunnelChannel:     make(chan *websocket.Conn, config.ChannelSize),
+		tunnelChannel:     make(chan TunnelChannel, config.ChannelSize),
 		getNewConnChan:    make(chan struct{}, config.ChannelSize),
 		controlChannel:    nil,                                           // will be set when a control connection is established
 		timeout:           2 * time.Second,                               // Default timeout
@@ -93,7 +99,7 @@ func (s *WsTransport) Restart() {
 	s.cancel = cancel
 
 	// Re-initialize variables
-	s.tunnelChannel = make(chan *websocket.Conn, s.config.ChannelSize)
+	s.tunnelChannel = make(chan TunnelChannel, s.config.ChannelSize)
 	s.getNewConnChan = make(chan struct{}, s.config.ChannelSize)
 	s.controlChannel = nil
 	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.logger)
@@ -164,12 +170,13 @@ func (s *WsTransport) poolChecker() {
 		default:
 			if len(s.tunnelChannel) < s.config.ConnectionPool {
 				for i := 0; i < s.config.ConnectionPool-len(s.tunnelChannel); i++ {
+					s.logger.Trace("requesting new connection from the client")
 					s.getNewConnChan <- struct{}{}
 				}
 			}
 		}
 		// Time interval to check pool status
-		time.Sleep(time.Millisecond * 300)
+		time.Sleep(time.Millisecond * 400)
 	}
 }
 
@@ -244,8 +251,14 @@ func (s *WsTransport) TunnelListener() {
 				return
 			}
 
+			wsConn := TunnelChannel{
+				conn: conn,
+				ping: make(chan struct{}),
+				mu:   &sync.Mutex{},
+			}
 			select {
-			case s.tunnelChannel <- conn:
+			case s.tunnelChannel <- wsConn:
+				go s.pingSender(&wsConn)
 				s.logger.Debugf("websocket connection accepted from %s", conn.RemoteAddr().String())
 			default:
 				s.logger.Warnf("websocket tunnel channel is full, closing connection from %s", conn.RemoteAddr().String())
@@ -358,14 +371,15 @@ func (s *WsTransport) handleWSSession(remotePort int, acceptChan chan net.Conn) 
 			for {
 				select {
 				case tunnelConnection := <-s.tunnelChannel:
-					// Send the target port over the WebSocket connection
-					if err := utils.SendWebSocketInt(tunnelConnection, uint16(remotePort)); err != nil {
+					close(tunnelConnection.ping)
+					tunnelConnection.mu.Lock()
+					if err := utils.SendWebSocketInt(tunnelConnection.conn, uint16(remotePort)); err != nil {
 						s.logger.Debugf("%v", err) // failed to send port number
-						tunnelConnection.Close()
+						tunnelConnection.conn.Close()
 						continue innerloop
 					}
 					// Handle data exchange between connections
-					go utils.WSToTCPConnHandler(tunnelConnection, incomingConn, s.logger, s.usageMonitor, incomingConn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffing)
+					go utils.WSToTCPConnHandler(tunnelConnection.conn, incomingConn, s.logger, s.usageMonitor, incomingConn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffing)
 					break innerloop
 
 				case <-time.After(s.timeout):
@@ -380,6 +394,36 @@ func (s *WsTransport) handleWSSession(remotePort int, acceptChan chan net.Conn) 
 			}
 		case <-s.ctx.Done():
 			return
+		}
+	}
+}
+
+func (s *WsTransport) pingSender(conn *TunnelChannel) {
+	ticker := time.NewTicker(s.heartbeatDuration) // Send periodic pings to the client
+
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-conn.ping:
+			s.logger.Trace("Ping channel closed")
+			return
+		case <-ticker.C:
+			// Try to acquire the lock without blocking
+			locked := conn.mu.TryLock()
+			if !locked {
+				// If the lock is held by another operation, stop the pingSender
+				s.logger.Trace("Write operation in progress, stopping pingSender")
+				return
+			}
+
+			if err := utils.SendWebSocketInt(conn.conn, 10); err != nil {
+				conn.mu.Unlock()
+				conn.conn.Close()
+				return
+			}
+			conn.mu.Unlock()
+			s.logger.Trace("Ping sent to the client")
 		}
 	}
 }
