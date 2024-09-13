@@ -6,11 +6,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"log"
 	"net/http"
 	"os"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/shirou/gopsutil/cpu"
+	"github.com/shirou/gopsutil/disk"
+	"github.com/shirou/gopsutil/mem"
+	"github.com/shirou/gopsutil/net"
 
 	"github.com/sirupsen/logrus"
 )
@@ -48,6 +54,7 @@ func (m *Usage) Monitor() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", m.handleIndex)    // handle index
 	mux.HandleFunc("/data", m.handleData) // New route for JSON data
+	mux.HandleFunc("/stats", m.statsHandler)
 
 	m.server = &http.Server{
 		Addr:    m.listenAddr,
@@ -92,7 +99,7 @@ var indexHTML embed.FS
 
 func (m *Usage) handleIndex(w http.ResponseWriter, r *http.Request) {
 	usageData := m.getUsageFromFile()
-	readableData := usageDataWithReadableUsage(usageData)
+	readableData := m.usageDataWithReadableUsage(usageData)
 
 	tmpl, err := template.ParseFS(indexHTML, "index.html")
 	if err != nil {
@@ -110,7 +117,7 @@ func (m *Usage) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 func (m *Usage) handleData(w http.ResponseWriter, r *http.Request) {
 	usageData := m.getUsageFromFile()
-	readableData := usageDataWithReadableUsage(usageData)
+	readableData := m.usageDataWithReadableUsage(usageData)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(readableData); err != nil {
@@ -119,6 +126,20 @@ func (m *Usage) handleData(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (m *Usage) statsHandler(w http.ResponseWriter, r *http.Request) {
+	stats, err := getSystemStats()
+	if err != nil {
+		log.Println("Error fetching system stats:", err)
+		http.Error(w, "Unable to fetch system stats", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(stats); err != nil {
+		log.Println("Error encoding JSON:", err)
+		http.Error(w, "Failed to encode JSON", http.StatusInternalServerError)
+	}
+}
 
 func (m *Usage) AddOrUpdatePort(port int, usage uint64) {
 	m.mu.Lock()
@@ -225,7 +246,7 @@ func (m *Usage) getUsageFromFile() []PortUsage {
 }
 
 // converts the byte usage to a human-readable format
-func usageDataWithReadableUsage(usageData []PortUsage) []struct {
+func (m *Usage) usageDataWithReadableUsage(usageData []PortUsage) []struct {
 	Port          int
 	ReadableUsage string
 } {
@@ -281,4 +302,108 @@ func convertBytesToReadable(bytes int64) string {
 	default:
 		return fmt.Sprintf("%d B", bytes) // Bytes
 	}
+}
+
+type SystemStats struct {
+	CPUUsage       string `json:"cpuUsage"`
+	RAMUsage       string `json:"ramUsage"`
+	DiskUsage      string `json:"diskUsage"`
+	SwapUsage      string `json:"swapUsage"`
+	NetworkTraffic string `json:"networkTraffic"`
+	UploadSpeed    string `json:"uploadSpeed"`
+	DownloadSpeed  string `json:"downloadSpeed"`
+}
+
+func getSystemStats() (*SystemStats, error) {
+
+	// Get initial network stats
+	initialStats, err := getNetworkStats()
+	if err != nil {
+		return nil, err
+	}
+
+	// Wait for 1 second
+	time.Sleep(1 * time.Second)
+
+	// Get updated network stats
+	finalStats, err := getNetworkStats()
+	if err != nil {
+		return nil, err
+	}
+
+	// Get CPU usage
+	cpuPercent, err := cpu.Percent(0, false)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get RAM usage
+	memStats, err := mem.VirtualMemory()
+	if err != nil {
+		return nil, err
+	}
+
+	// Get Disk usage
+	diskStats, err := disk.Usage("/")
+	if err != nil {
+		return nil, err
+	}
+
+	// Get Swap usage
+	swapStats, err := mem.SwapMemory()
+	if err != nil {
+		return nil, err
+	}
+
+	// Get Network traffic
+	netStats, err := net.IOCounters(false)
+	if err != nil {
+		return nil, err
+	}
+
+	// Calculate upload and download speeds
+	uploadSpeed := float64(finalStats.BytesSent - initialStats.BytesSent)
+	downloadSpeed := float64(finalStats.BytesRecv - initialStats.BytesRecv)
+
+	stats := &SystemStats{
+		CPUUsage:       formatFloat(cpuPercent[0]),
+		RAMUsage:       formatBytes(memStats.Used),
+		DiskUsage:      formatBytes(diskStats.Used),
+		SwapUsage:      formatBytes(swapStats.Used),
+		NetworkTraffic: formatBytes(netStats[0].BytesSent + netStats[0].BytesRecv),
+		DownloadSpeed:  formatSpeed(downloadSpeed),
+		UploadSpeed:    formatSpeed(uploadSpeed),
+	}
+
+	return stats, nil
+}
+
+func formatSpeed(bytesPerSec float64) string {
+	if bytesPerSec >= 1e9 {
+		return fmt.Sprintf("%.2f GB/s", bytesPerSec/1e9)
+	} else if bytesPerSec >= 1e6 {
+		return fmt.Sprintf("%.2f MB/s", bytesPerSec/1e6)
+	} else if bytesPerSec >= 1e3 {
+		return fmt.Sprintf("%.2f KB/s", bytesPerSec/1e3)
+	}
+	return fmt.Sprintf("%.2f B/s", bytesPerSec)
+}
+
+func formatFloat(value float64) string {
+	return fmt.Sprintf("%.2f%%", value)
+}
+
+func formatBytes(bytes uint64) string {
+	return fmt.Sprintf("%.2f GB", float64(bytes)/(1024*1024*1024))
+}
+
+func getNetworkStats() (*net.IOCountersStat, error) {
+	ioCounters, err := net.IOCounters(false)
+	if err != nil {
+		return nil, err
+	}
+	if len(ioCounters) == 0 {
+		return nil, fmt.Errorf("no network IO counters found")
+	}
+	return &ioCounters[0], nil
 }
