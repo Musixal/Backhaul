@@ -46,7 +46,8 @@ func NewDataStore(listenAddr string, shutdownCtx context.Context, snifferLog str
 
 func (m *Usage) Monitor() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", m.handleIndex) // Set up routes
+	mux.HandleFunc("/", m.handleIndex)    // handle index
+	mux.HandleFunc("/data", m.handleData) // New route for JSON data
 
 	m.server = &http.Server{
 		Addr:    m.listenAddr,
@@ -91,8 +92,8 @@ var indexHTML embed.FS
 
 func (m *Usage) handleIndex(w http.ResponseWriter, r *http.Request) {
 	usageData := m.getUsageFromFile()
+	readableData := usageDataWithReadableUsage(usageData)
 
-	// Parse the embedded template
 	tmpl, err := template.ParseFS(indexHTML, "index.html")
 	if err != nil {
 		m.logger.Error("error parsing template: %v", err)
@@ -100,13 +101,24 @@ func (m *Usage) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Render the template with the usage data
-	err = tmpl.Execute(w, usageDataWithReadableUsage(usageData))
+	err = tmpl.Execute(w, readableData)
 	if err != nil {
 		m.logger.Error("error executing template: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 }
+
+func (m *Usage) handleData(w http.ResponseWriter, r *http.Request) {
+	usageData := m.getUsageFromFile()
+	readableData := usageDataWithReadableUsage(usageData)
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(readableData); err != nil {
+		m.logger.Errorf("error encoding JSON response: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
 
 func (m *Usage) AddOrUpdatePort(port int, usage uint64) {
 	m.mu.Lock()
