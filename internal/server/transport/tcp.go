@@ -286,7 +286,7 @@ func (s *TcpTransport) poolChecker() {
 			}
 		}
 		// Time interval to check pool status
-		time.Sleep(time.Millisecond * 200)
+		time.Sleep(time.Millisecond * 400)
 	}
 }
 
