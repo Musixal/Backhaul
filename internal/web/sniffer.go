@@ -13,10 +13,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/shirou/gopsutil/cpu"
-	"github.com/shirou/gopsutil/disk"
-	"github.com/shirou/gopsutil/mem"
-	"github.com/shirou/gopsutil/net"
+	"github.com/shirou/gopsutil/v4/cpu"
+	"github.com/shirou/gopsutil/v4/disk"
+	"github.com/shirou/gopsutil/v4/mem"
+	"github.com/shirou/gopsutil/v4/net"
 
 	"github.com/sirupsen/logrus"
 )
@@ -38,6 +38,20 @@ type Usage struct {
 type PortUsage struct {
 	Port  int
 	Usage uint64
+}
+
+type SystemStats struct {
+	TunnelStatus    string `json:"tunnelStatus"`
+	CPUUsage        string `json:"cpuUsage"`
+	RAMUsage        string `json:"ramUsage"`
+	DiskUsage       string `json:"diskUsage"`
+	SwapUsage       string `json:"swapUsage"`
+	NetworkTraffic  string `json:"networkTraffic"`
+	UploadSpeed     string `json:"uploadSpeed"`
+	DownloadSpeed   string `json:"downloadSpeed"`
+	BackhaulTraffic string `json:"backhaulTraffic"`
+	Sniffer         string `json:"sniffer"`
+	AllConnections  string `json:"allConnections"`
 }
 
 func NewDataStore(listenAddr string, shutdownCtx context.Context, snifferLog string, sniffer bool, tunnelStatus *string, logger *logrus.Logger) *Usage {
@@ -272,7 +286,7 @@ func (m *Usage) usageDataWithReadableUsage(usageData []PortUsage) []struct {
 			ReadableUsage string
 		}{
 			Port:          portUsage.Port,
-			ReadableUsage: convertBytesToReadable(portUsage.Usage),
+			ReadableUsage: m.convertBytesToReadable(portUsage.Usage),
 		})
 	}
 
@@ -296,7 +310,7 @@ func (m *Usage) collectUsageDataFromSyncMap() []PortUsage {
 }
 
 // ConvertBytesToReadable converts bytes into a human-readable format (KB, MB, GB)
-func convertBytesToReadable(bytes uint64) string {
+func (m *Usage) convertBytesToReadable(bytes uint64) string {
 	const (
 		KB = 1 << (10 * 1) // 1024 bytes
 		MB = 1 << (10 * 2) // 1024 KB
@@ -318,23 +332,10 @@ func convertBytesToReadable(bytes uint64) string {
 	}
 }
 
-type SystemStats struct {
-	TunnelStatus    string `json:"tunnelStatus"`
-	CPUUsage        string `json:"cpuUsage"`
-	RAMUsage        string `json:"ramUsage"`
-	DiskUsage       string `json:"diskUsage"`
-	SwapUsage       string `json:"swapUsage"`
-	NetworkTraffic  string `json:"networkTraffic"`
-	UploadSpeed     string `json:"uploadSpeed"`
-	DownloadSpeed   string `json:"downloadSpeed"`
-	BackhaulTraffic string `json:"backhaulTraffic"`
-	Sniffer         string `json:"sniffer"`
-}
-
 func (m *Usage) getSystemStats() (*SystemStats, error) {
 
 	// Get initial network stats
-	initialStats, err := getNetworkStats()
+	initialStats, err := m.getNetworkStats()
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +344,7 @@ func (m *Usage) getSystemStats() (*SystemStats, error) {
 	time.Sleep(1 * time.Second)
 
 	// Get updated network stats
-	finalStats, err := getNetworkStats()
+	finalStats, err := m.getNetworkStats()
 	if err != nil {
 		return nil, err
 	}
@@ -378,27 +379,34 @@ func (m *Usage) getSystemStats() (*SystemStats, error) {
 		return nil, err
 	}
 
+	// Get all active network connections (TCP, UDP, etc.)
+	connections, err := net.Connections("all")
+	if err != nil {
+		return nil, err
+	}
+
 	// Calculate upload and download speeds
 	uploadSpeed := float64(finalStats.BytesSent - initialStats.BytesSent)
 	downloadSpeed := float64(finalStats.BytesRecv - initialStats.BytesRecv)
 
 	stats := &SystemStats{
 		TunnelStatus:    *m.tunnelStatus,
-		CPUUsage:        formatFloat(cpuPercent[0]),
-		RAMUsage:        convertBytesToReadable(memStats.Used),
-		DiskUsage:       convertBytesToReadable(diskStats.Used),
-		SwapUsage:       convertBytesToReadable(swapStats.Used),
-		NetworkTraffic:  convertBytesToReadable(netStats[0].BytesSent + netStats[0].BytesRecv),
-		DownloadSpeed:   formatSpeed(downloadSpeed),
-		UploadSpeed:     formatSpeed(uploadSpeed),
-		BackhaulTraffic: convertBytesToReadable(m.totalTraffic),
+		CPUUsage:        m.formatFloat(cpuPercent[0]),
+		RAMUsage:        m.convertBytesToReadable(memStats.Used),
+		DiskUsage:       m.convertBytesToReadable(diskStats.Used),
+		SwapUsage:       m.convertBytesToReadable(swapStats.Used),
+		NetworkTraffic:  m.convertBytesToReadable(netStats[0].BytesSent + netStats[0].BytesRecv),
+		DownloadSpeed:   m.formatSpeed(downloadSpeed),
+		UploadSpeed:     m.formatSpeed(uploadSpeed),
+		BackhaulTraffic: m.convertBytesToReadable(m.totalTraffic),
 		Sniffer:         map[bool]string{true: "Running", false: "Not running"}[m.sniffer],
+		AllConnections:  fmt.Sprintf("%d", len(connections)),
 	}
 
 	return stats, nil
 }
 
-func formatSpeed(bytesPerSec float64) string {
+func (m *Usage) formatSpeed(bytesPerSec float64) string {
 	if bytesPerSec >= 1e9 {
 		return fmt.Sprintf("%.2f GB/s", bytesPerSec/1e9)
 	} else if bytesPerSec >= 1e6 {
@@ -409,11 +417,11 @@ func formatSpeed(bytesPerSec float64) string {
 	return fmt.Sprintf("%.2f B/s", bytesPerSec)
 }
 
-func formatFloat(value float64) string {
+func (m *Usage) formatFloat(value float64) string {
 	return fmt.Sprintf("%.2f%%", value)
 }
 
-func getNetworkStats() (*net.IOCountersStat, error) {
+func (m *Usage) getNetworkStats() (*net.IOCountersStat, error) {
 	ioCounters, err := net.IOCounters(false)
 	if err != nil {
 		return nil, err

@@ -67,6 +67,10 @@
             </div>
             <div class="flex items-center"><i class="fas fa-upload mr-2"></i><strong>Upload Speed:&nbsp;</strong> <span
                     id="upload-speed" class="dark:text-gray-200">Loading...</span></div>
+            <div class="flex items-center"><i class="fas fa-project-diagram mr-2"></i><strong>All
+                    Connections:&nbsp;</strong>
+                <span id="all-connections" class="dark:text-gray-200">Loading...</span>
+            </div>
             <div class="flex items-center"><i class="fas fa-eye mr-2"></i><strong>Sniffer:&nbsp;</strong> <span
                     id="sniffer" class="dark:text-gray-200">Loading...</span></div>
         </div>
@@ -132,6 +136,7 @@
                 document.getElementById('upload-speed').textContent = stats.uploadSpeed;
                 document.getElementById('backhaul-traffic').textContent = stats.backhaulTraffic;
                 document.getElementById('sniffer').textContent = stats.sniffer;
+                document.getElementById('all-connections').textContent = stats.allConnections;
             } catch (error) {
                 console.error('Error fetching system stats:', error);
                 document.querySelector('.space-y-4').innerHTML = '<div>Error loading stats</div>';
