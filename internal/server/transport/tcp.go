@@ -279,7 +279,7 @@ func (s *TcpTransport) heartbeat() {
 }
 
 func (s *TcpTransport) poolChecker() {
-	ticker := time.NewTicker(time.Millisecond * 400)
+	ticker := time.NewTicker(time.Millisecond * 500)
 	defer ticker.Stop()
 
 	for {
@@ -293,7 +293,7 @@ func (s *TcpTransport) poolChecker() {
 				neededConnections := s.config.ConnectionPool - currentPoolSize
 				s.logger.Tracef("pool size is %d, adding %d new connections", currentPoolSize, neededConnections)
 
-				loop:
+			loop:
 				for i := 0; i < neededConnections; i++ {
 					select {
 					case s.getNewConnChan <- struct{}{}:
@@ -374,7 +374,13 @@ func (s *TcpTransport) localListener(localAddr string, remotePort int) {
 				s.logger.Debugf("accepted incoming TCP connection from %s", tcpConn.RemoteAddr().String())
 
 				if len(s.tunnelChannel) < s.config.ConnectionPool {
-					s.getNewConnChan <- struct{}{}
+					select {
+					case s.getNewConnChan <- struct{}{}:
+						// Successfully requested a new connection
+					default:
+						// The channel is full, do nothing
+						s.logger.Warn("getNewConnChan is full, cannot request a new connection")
+					}
 				}
 
 				select {
