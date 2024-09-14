@@ -279,20 +279,31 @@ func (s *TcpTransport) heartbeat() {
 }
 
 func (s *TcpTransport) poolChecker() {
+	ticker := time.NewTicker(time.Millisecond * 400)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
 
-		default:
-			if len(s.tunnelChannel) < s.config.ConnectionPool {
-				for i := 0; i < s.config.ConnectionPool-len(s.tunnelChannel); i++ {
-					s.getNewConnChan <- struct{}{}
+		case <-ticker.C:
+			currentPoolSize := len(s.tunnelChannel)
+			if currentPoolSize < s.config.ConnectionPool {
+				neededConnections := s.config.ConnectionPool - currentPoolSize
+				s.logger.Tracef("pool size is %d, adding %d new connections", currentPoolSize, neededConnections)
+
+				loop:
+				for i := 0; i < neededConnections; i++ {
+					select {
+					case s.getNewConnChan <- struct{}{}:
+					default:
+						s.logger.Trace("getNewConnChan is full, skipping new connection")
+						break loop
+					}
 				}
 			}
 		}
-		// Time interval to check pool status
-		time.Sleep(time.Millisecond * 400)
 	}
 }
 
