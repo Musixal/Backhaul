@@ -236,7 +236,7 @@ func (c *WsTransport) wsDialer(addr string, path string) (*websocket.Conn, error
 		dialer = websocket.Dialer{
 			HandshakeTimeout: c.timeout, // Set handshake timeout
 			NetDial: func(_, addr string) (net.Conn, error) {
-				conn, err := net.Dial("tcp4", addr)
+				conn, err := net.Dial("tcp", addr)
 				if err != nil {
 					return nil, err
 				}
@@ -252,7 +252,7 @@ func (c *WsTransport) wsDialer(addr string, path string) (*websocket.Conn, error
 			TLSClientConfig:  tlsConfig, // Pass the insecure TLS config here
 			HandshakeTimeout: c.timeout, // Set handshake timeout
 			NetDial: func(_, addr string) (net.Conn, error) {
-				conn, err := net.Dial("tcp4", addr)
+				conn, err := net.Dial("tcp", addr)
 				if err != nil {
 					return nil, err
 				}
