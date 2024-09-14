@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
-	"log"
 	"net/http"
 	"os"
 	"sort"
@@ -96,7 +95,7 @@ func (m *Usage) Monitor() {
 	// start save data
 	if m.sniffer {
 		go func() {
-			ticker := time.NewTicker(5 * time.Second) // every 5 seconds	
+			ticker := time.NewTicker(5 * time.Second) // every 5 seconds
 			defer ticker.Stop()
 
 			for {
@@ -110,7 +109,7 @@ func (m *Usage) Monitor() {
 		}()
 	}
 	// Start the server
-	m.logger.Info("sniffer server starting at", m.listenAddr)
+	m.logger.Info("sniffer service listening on port: ", m.listenAddr)
 	if err := m.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		m.logger.Error("sniffer server error: %v", err)
 	}
@@ -126,14 +125,12 @@ func (m *Usage) handleIndex(w http.ResponseWriter, r *http.Request) {
 	tmpl, err := template.ParseFS(indexHTML, "index.html")
 	if err != nil {
 		m.logger.Error("error parsing template: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
 	err = tmpl.Execute(w, readableData)
 	if err != nil {
 		m.logger.Error("error executing template: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 }
 
@@ -144,22 +141,19 @@ func (m *Usage) handleData(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(readableData); err != nil {
 		m.logger.Errorf("error encoding JSON response: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 }
 
 func (m *Usage) statsHandler(w http.ResponseWriter, r *http.Request) {
 	stats, err := m.getSystemStats()
 	if err != nil {
-		log.Println("Error fetching system stats:", err)
-		http.Error(w, "Unable to fetch system stats", http.StatusInternalServerError)
+		m.logger.Error("Error fetching system stats:", err)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(stats); err != nil {
-		log.Println("Error encoding JSON:", err)
-		http.Error(w, "Failed to encode JSON", http.StatusInternalServerError)
+		m.logger.Error("Error encoding JSON:", err)
 	}
 }
 
