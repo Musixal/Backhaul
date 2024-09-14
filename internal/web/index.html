@@ -9,37 +9,79 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" />
 </head>
 
-<body class="bg-gray-100 flex justify-center items-start min-h-screen m-0 p-0 font-sans">
-    <div class="container mx-auto p-6 bg-white shadow-lg rounded-lg mt-4 w-full max-w-4xl">
-        <h1 class="text-2xl font-bold text-gray-800 text-center mb-6">System Stats and Port Usage</h1>
+
+<style>
+    .dark {
+        background-color: #000000;
+        color: #fff;
+    }
+
+    .dark .container {
+        background-color: #222123;
+    }
+
+    .dark .text-gray-800 {
+        color: #148b34;
+    }
+
+    .dark .bg-gray-200 {
+        background-color: #121010
+    }
+
+    .dark .bg-gray-800 {
+        background-color: #1e4e23
+    }
+</style>
+
+<body class="bg-gray-100 dark:bg-gray-900 flex justify-center items-start min-h-screen m-0 p-0 font-sans " id="body">
+    <div class="dark:bg-gray-800 container mx-auto p-6 bg-white  shadow-lg rounded-lg mt-4 w-full max-w-3xl relative">
+        <button id="dark-mode-button"
+            class="absolute top-4 right-4 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 text-gray-800 dark:text-gray-200 font-bold py-2 px-4 rounded">
+            <i class="fas fa-moon"></i>
+        </button>
+        <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200  text-center mb-6">System Stats
+            and Port Usage
+        </h1>
         <div class="space-y-4 mb-6 p-4">
-            <div class="flex items-center"><i class="fas fa-microchip mr-2"></i><strong>CPU Usage:&nbsp;</strong> <span
-                    id="cpu-usage">Loading...</span></div>
+            <div class="flex items-center"><i class="fas fa-link mr-2 "></i><strong>Tunnel Status:&nbsp;</strong>
+                <span id="tunnel-status" class="dark:text-gray-200">Loading...</span>
+            </div>
+            <div class="flex items-center"><i class="fas fa-microchip mr-2 "></i><strong>CPU
+                    Usage:&nbsp;</strong> <span id="cpu-usage" class="dark:text-gray-200">Loading...</span></div>
             <div class="flex items-center"><i class="fas fa-memory mr-2"></i><strong>RAM Usage:&nbsp;</strong> <span
-                    id="ram-usage">Loading...</span></div>
+                    id="ram-usage" class="dark:text-gray-200">Loading...</span></div>
             <div class="flex items-center"><i class="fas fa-hdd mr-2"></i><strong>Disk Usage:&nbsp;</strong> <span
-                    id="disk-usage">Loading...</span></div>
+                    id="disk-usage" class="dark:text-gray-200">Loading...</span></div>
             <div class="flex items-center"><i class="fas fa-exchange-alt mr-2"></i><strong>Swap Usage:&nbsp;</strong>
-                <span id="swap-usage">Loading...</span>
+                <span id="swap-usage" class="dark:text-gray-200">Loading...</span>
             </div>
             <div class="flex items-center"><i class="fas fa-network-wired mr-2"></i><strong>Network
-                    Traffic:&nbsp;</strong> <span id="network-traffic">Loading...</span></div>
+                    Traffic:&nbsp;</strong> <span id="network-traffic" class="dark:text-gray-200">Loading...</span>
+            </div>
+            <div class="flex items-center"><i class="fas fa-route mr-2"></i><strong>Backhaul Traffic:&nbsp;</strong>
+                <span id="backhaul-traffic" class="dark:text-gray-200">Loading...</span>
+            </div>
+
             <div class="flex items-center"><i class="fas fa-download mr-2"></i><strong>Download Speed:&nbsp;</strong>
-                <span id="download-speed">Loading...</span>
+                <span id="download-speed" class="dark:text-gray-200">Loading...</span>
             </div>
             <div class="flex items-center"><i class="fas fa-upload mr-2"></i><strong>Upload Speed:&nbsp;</strong> <span
-                    id="upload-speed">Loading...</span></div>
+                    id="upload-speed" class="dark:text-gray-200">Loading...</span></div>
+            <div class="flex items-center"><i class="fas fa-eye mr-2"></i><strong>Sniffer:&nbsp;</strong> <span
+                    id="sniffer" class="dark:text-gray-200">Loading...</span></div>
         </div>
-        <table id="port-usage-table" class="w-full border-collapse text-left">
-            <thead>
+
+        <table id="port-usage-table" class="dark:bg-gray-800 w-full border-collapse text-left">
+            <thead class="border px-4 py-2 bg-gray-200 dark:bg-gray-700">
                 <tr>
-                    <th class="border px-4 py-2 bg-gray-200">Port</th>
-                    <th class="border px-4 py-2 bg-gray-200">Usage</th>
+                    <th class="border px-4 py-2 bg-gray-200 dark:bg-gray-700">Port</th>
+                    <th class="border px-4 py-2 bg-gray-200 dark:bg-gray-700">Usage</th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody class="bg-gray-10">
                 <tr>
-                    <td colspan="2" class="border px-4 py-2 text-center">Loading...</td>
+                    <td colspan="2" class="border px-4 py-2 text-center">Loading...
+                    </td>
                 </tr>
             </tbody>
         </table>
@@ -47,6 +89,7 @@
     <footer class="fixed bottom-0 w-full bg-gray-800 text-white text-center py-2">
         &copy; 2024 Backhaul Project
     </footer>
+
 
     <script>
         async function fetchData() {
@@ -79,7 +122,7 @@
                 const response = await fetch('/stats'); // Replace with your stats endpoint
                 if (!response.ok) throw new Error('Network response was not ok');
                 const stats = await response.json();
-
+                document.getElementById('tunnel-status').textContent = stats.tunnelStatus;
                 document.getElementById('cpu-usage').textContent = stats.cpuUsage;
                 document.getElementById('ram-usage').textContent = stats.ramUsage;
                 document.getElementById('disk-usage').textContent = stats.diskUsage;
@@ -87,6 +130,8 @@
                 document.getElementById('network-traffic').textContent = stats.networkTraffic;
                 document.getElementById('download-speed').textContent = stats.downloadSpeed;
                 document.getElementById('upload-speed').textContent = stats.uploadSpeed;
+                document.getElementById('backhaul-traffic').textContent = stats.backhaulTraffic;
+                document.getElementById('sniffer').textContent = stats.sniffer;
             } catch (error) {
                 console.error('Error fetching system stats:', error);
                 document.querySelector('.space-y-4').innerHTML = '<div>Error loading stats</div>';
@@ -102,6 +147,18 @@
         // Initial fetch
         fetchData();
         fetchSystemStats();
+
+        // Dark mode button
+        const darkModeButton = document.getElementById('dark-mode-button');
+        darkModeButton.addEventListener('click', () => {
+            const body = document.getElementById('body');
+            body.classList.toggle('dark'); // Toggle the dark class
+            if (body.classList.contains('dark')) {
+                darkModeButton.innerHTML = '<i class="fas fa-sun"></i>';
+            } else {
+                darkModeButton.innerHTML = '<i class="fas fa-moon"></i>';
+            }
+        });
     </script>
 </body>
 

@@ -43,13 +43,14 @@ type WsConfig struct {
 	Token          string
 	ChannelSize    int
 	Ports          []string
-	Sniffing       bool
+	Sniffer        bool
 	WebPort        int
 	SnifferLog     string
 	TLSCertFile    string               // Path to the TLS certificate file
 	TLSKeyFile     string               // Path to the TLS key file
 	Mode           config.TransportType // ws or wss
 	Heartbeat      int                  // in seconds
+	TunnelStatus   string
 }
 
 type TunnelChannel struct {
@@ -75,7 +76,7 @@ func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 		heartbeatDuration: time.Duration(config.Heartbeat) * time.Second, // Default heartbeat duration
 		heartbeatSig:      "0",                                           // Default heartbeat signal
 		chanSignal:        "1",                                           // Default channel signal
-		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
+		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
 	return server
@@ -102,7 +103,8 @@ func (s *WsTransport) Restart() {
 	s.tunnelChannel = make(chan TunnelChannel, s.config.ChannelSize)
 	s.getNewConnChan = make(chan struct{}, s.config.ChannelSize)
 	s.controlChannel = nil
-	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.logger)
+	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.config.Sniffer, &s.config.TunnelStatus, s.logger)
+	s.config.TunnelStatus = ""
 
 	go s.TunnelListener()
 
@@ -200,8 +202,14 @@ func (s *WsTransport) getNewConnection() {
 }
 
 func (s *WsTransport) TunnelListener() {
-	addr := s.config.BindAddr
+	// for  webui
+	if s.config.WebPort > 0 {
+		go s.usageMonitor.Monitor()
+	}
 
+	s.config.TunnelStatus = "Disconnected (Websocket)"
+
+	addr := s.config.BindAddr
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			return true
@@ -244,9 +252,7 @@ func (s *WsTransport) TunnelListener() {
 				go s.poolChecker()
 				go s.portConfigReader()
 
-				if s.config.Sniffing {
-					go s.usageMonitor.Monitor()
-				}
+				s.config.TunnelStatus = "Connected (Websocket)"
 
 				return
 			}
@@ -379,7 +385,7 @@ func (s *WsTransport) handleWSSession(remotePort int, acceptChan chan net.Conn) 
 						continue innerloop
 					}
 					// Handle data exchange between connections
-					go utils.WSToTCPConnHandler(tunnelConnection.conn, incomingConn, s.logger, s.usageMonitor, incomingConn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffing)
+					go utils.WSToTCPConnHandler(tunnelConnection.conn, incomingConn, s.logger, s.usageMonitor, incomingConn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
 					break innerloop
 
 				case <-time.After(s.timeout):

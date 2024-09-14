@@ -9,15 +9,15 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func ConnectionHandler(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffing bool) {
+func ConnectionHandler(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
 	done := make(chan struct{})
 
 	go func() {
 		defer close(done)
-		transferData(from, to, logger, usage, remotePort, sniffing)
+		transferData(from, to, logger, usage, remotePort, sniffer)
 	}()
 
-	transferData(to, from, logger, usage, remotePort, sniffing)
+	transferData(to, from, logger, usage, remotePort, sniffer)
 
 	<-done
 
@@ -26,7 +26,7 @@ func ConnectionHandler(from net.Conn, to net.Conn, logger *logrus.Logger, usage 
 }
 
 // Using direct Read and Write for transferring data
-func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffing bool) {
+func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
 	buf := make([]byte, 16*1024) // 16K
 	for {
 		// Read data from the source connection
@@ -61,7 +61,7 @@ func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.
 		}
 
 		logger.Tracef("read data: %d bytes, written data: %d bytes", r, totalWritten)
-		if sniffing {
+		if sniffer {
 			go usage.AddOrUpdatePort(remotePort, uint64(totalWritten))
 		}
 	}

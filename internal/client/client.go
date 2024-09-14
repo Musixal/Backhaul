@@ -54,7 +54,7 @@ func (c *Client) Start() {
 			RetryInterval: time.Duration(c.config.RetryInterval) * time.Second,
 			Token:         c.config.Token,
 			Forwarder:     c.forwarderReader(c.config.Forwarder),
-			Sniffing:      c.config.Sniffer,
+			Sniffer:       c.config.Sniffer,
 			WebPort:       c.config.WebPort,
 			SnifferLog:    c.config.SnifferLog,
 		}
@@ -74,7 +74,7 @@ func (c *Client) Start() {
 			MaxReceiveBuffer: c.config.MaxReceiveBuffer,
 			MaxStreamBuffer:  c.config.MaxStreamBuffer,
 			Forwarder:        c.forwarderReader(c.config.Forwarder),
-			Sniffing:         c.config.Sniffer,
+			Sniffer:          c.config.Sniffer,
 			WebPort:          c.config.WebPort,
 			SnifferLog:       c.config.SnifferLog,
 		}
@@ -89,7 +89,7 @@ func (c *Client) Start() {
 			RetryInterval: time.Duration(c.config.RetryInterval) * time.Second,
 			Token:         c.config.Token,
 			Forwarder:     c.forwarderReader(c.config.Forwarder),
-			Sniffing:      c.config.Sniffer,
+			Sniffer:       c.config.Sniffer,
 			WebPort:       c.config.WebPort,
 			SnifferLog:    c.config.SnifferLog,
 			Mode:          c.config.Transport,

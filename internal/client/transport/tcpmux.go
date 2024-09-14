@@ -37,9 +37,10 @@ type TcpMuxConfig struct {
 	MaxFrameSize     int
 	MaxReceiveBuffer int
 	MaxStreamBuffer  int
-	Sniffing         bool
+	Sniffer          bool
 	WebPort          int
 	SnifferLog       string
+	TunnelStatus     string
 }
 
 func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logrus.Logger) *TcpMuxTransport {
@@ -54,7 +55,7 @@ func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logru
 		logger:       logger,
 		smuxSession:  make([]*smux.Session, config.MuxSession),
 		timeout:      5 * time.Second, // Default timeout
-		usageMonitor: web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
+		usageMonitor: web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
 	return client
@@ -80,13 +81,21 @@ func (c *TcpMuxTransport) Restart() {
 
 	// Re-initialize variables
 	c.smuxSession = make([]*smux.Session, c.config.MuxSession)
-	c.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.logger)
+	c.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.config.Sniffer, &c.config.TunnelStatus, c.logger)
+	c.config.TunnelStatus = ""
 
 	go c.MuxDialer()
 
 }
 
 func (c *TcpMuxTransport) MuxDialer() {
+	// for  webui
+	if c.config.WebPort > 0 {
+		go c.usageMonitor.Monitor()
+	}
+
+	c.config.TunnelStatus = "Disconnected (TCPMux)"
+
 	for id := 0; id < c.config.MuxSession; id++ {
 	innerloop:
 		for {
@@ -148,9 +157,7 @@ func (c *TcpMuxTransport) MuxDialer() {
 		}
 	}
 
-	if c.config.Sniffing {
-		go c.usageMonitor.Monitor()
-	}
+	c.config.TunnelStatus = "Connected (TCPMux)"
 }
 
 func (c *TcpMuxTransport) handleMUXStreams(id int) {
@@ -244,6 +251,6 @@ func (c *TcpMuxTransport) localDialer(tunnelConnection net.Conn, port uint16) {
 			return
 		}
 		c.logger.Debugf("connected to local address %s successfully", localAddress)
-		go utils.ConnectionHandler(localConnection, tunnelConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffing)
+		go utils.ConnectionHandler(localConnection, tunnelConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffer)
 	}
 }

@@ -22,14 +22,17 @@ import (
 )
 
 type Usage struct {
-	dataStore   sync.Map
-	listenAddr  string
-	shutdownCtx context.Context
-	cancelFunc  context.CancelFunc
-	server      *http.Server
-	logger      *logrus.Logger
-	snifferLog  string
-	mu          sync.Mutex
+	dataStore    sync.Map
+	listenAddr   string
+	shutdownCtx  context.Context
+	cancelFunc   context.CancelFunc
+	server       *http.Server
+	logger       *logrus.Logger
+	sniffer      bool
+	snifferLog   string
+	mu           sync.Mutex
+	totalTraffic uint64
+	tunnelStatus *string
 }
 
 type PortUsage struct {
@@ -37,15 +40,18 @@ type PortUsage struct {
 	Usage uint64
 }
 
-func NewDataStore(listenAddr string, shutdownCtx context.Context, snifferLog string, logger *logrus.Logger) *Usage {
+func NewDataStore(listenAddr string, shutdownCtx context.Context, snifferLog string, sniffer bool, tunnelStatus *string, logger *logrus.Logger) *Usage {
 	ctx, cancel := context.WithCancel(shutdownCtx)
 	u := &Usage{
-		listenAddr:  listenAddr,
-		shutdownCtx: ctx,
-		cancelFunc:  cancel,
-		logger:      logger,
-		snifferLog:  snifferLog,
-		mu:          sync.Mutex{},
+		listenAddr:   listenAddr,
+		shutdownCtx:  ctx,
+		cancelFunc:   cancel,
+		logger:       logger,
+		sniffer:      sniffer,
+		snifferLog:   snifferLog,
+		tunnelStatus: tunnelStatus,
+		mu:           sync.Mutex{},
+		totalTraffic: 0,
 	}
 	return u
 }
@@ -73,20 +79,22 @@ func (m *Usage) Monitor() {
 		}
 	}()
 
-	go func() {
-		ticker := time.NewTicker(3 * time.Second)
-		defer ticker.Stop()
+	// start save data
+	if m.sniffer {
+		go func() {
+			ticker := time.NewTicker(3 * time.Second)
+			defer ticker.Stop()
 
-		for {
-			select {
-			case <-ticker.C:
-				go m.saveUsageData()
-			case <-m.shutdownCtx.Done():
-				return
+			for {
+				select {
+				case <-ticker.C:
+					go m.saveUsageData()
+				case <-m.shutdownCtx.Done():
+					return
+				}
 			}
-		}
-	}()
-
+		}()
+	}
 	// Start the server
 	m.logger.Info("sniffer server starting at", m.listenAddr)
 	if err := m.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -127,7 +135,7 @@ func (m *Usage) handleData(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Usage) statsHandler(w http.ResponseWriter, r *http.Request) {
-	stats, err := getSystemStats()
+	stats, err := m.getSystemStats()
 	if err != nil {
 		log.Println("Error fetching system stats:", err)
 		http.Error(w, "Unable to fetch system stats", http.StatusInternalServerError)
@@ -199,10 +207,13 @@ func (m *Usage) saveUsageData() {
 		}
 	}
 
+	m.totalTraffic = 0
+
 	// Step 4: Convert the map back to a slice
 	var mergedUsageData []PortUsage
 	for _, usage := range usageMap {
 		mergedUsageData = append(mergedUsageData, usage)
+		m.totalTraffic += usage.Usage
 	}
 
 	// Step 5: Convert merged data to JSON
@@ -261,7 +272,7 @@ func (m *Usage) usageDataWithReadableUsage(usageData []PortUsage) []struct {
 			ReadableUsage string
 		}{
 			Port:          portUsage.Port,
-			ReadableUsage: convertBytesToReadable(int64(portUsage.Usage)),
+			ReadableUsage: convertBytesToReadable(portUsage.Usage),
 		})
 	}
 
@@ -285,14 +296,17 @@ func (m *Usage) collectUsageDataFromSyncMap() []PortUsage {
 }
 
 // ConvertBytesToReadable converts bytes into a human-readable format (KB, MB, GB)
-func convertBytesToReadable(bytes int64) string {
+func convertBytesToReadable(bytes uint64) string {
 	const (
 		KB = 1 << (10 * 1) // 1024 bytes
 		MB = 1 << (10 * 2) // 1024 KB
 		GB = 1 << (10 * 3) // 1024 MB
+		TB = 1 << (10 * 4) // 1024 TB
 	)
 
 	switch {
+	case bytes >= TB:
+		return fmt.Sprintf("%.2f TB", float64(bytes)/float64(TB))
 	case bytes >= GB:
 		return fmt.Sprintf("%.2f GB", float64(bytes)/float64(GB))
 	case bytes >= MB:
@@ -305,16 +319,19 @@ func convertBytesToReadable(bytes int64) string {
 }
 
 type SystemStats struct {
-	CPUUsage       string `json:"cpuUsage"`
-	RAMUsage       string `json:"ramUsage"`
-	DiskUsage      string `json:"diskUsage"`
-	SwapUsage      string `json:"swapUsage"`
-	NetworkTraffic string `json:"networkTraffic"`
-	UploadSpeed    string `json:"uploadSpeed"`
-	DownloadSpeed  string `json:"downloadSpeed"`
+	TunnelStatus    string `json:"tunnelStatus"`
+	CPUUsage        string `json:"cpuUsage"`
+	RAMUsage        string `json:"ramUsage"`
+	DiskUsage       string `json:"diskUsage"`
+	SwapUsage       string `json:"swapUsage"`
+	NetworkTraffic  string `json:"networkTraffic"`
+	UploadSpeed     string `json:"uploadSpeed"`
+	DownloadSpeed   string `json:"downloadSpeed"`
+	BackhaulTraffic string `json:"backhaulTraffic"`
+	Sniffer         string `json:"sniffer"`
 }
 
-func getSystemStats() (*SystemStats, error) {
+func (m *Usage) getSystemStats() (*SystemStats, error) {
 
 	// Get initial network stats
 	initialStats, err := getNetworkStats()
@@ -366,13 +383,16 @@ func getSystemStats() (*SystemStats, error) {
 	downloadSpeed := float64(finalStats.BytesRecv - initialStats.BytesRecv)
 
 	stats := &SystemStats{
-		CPUUsage:       formatFloat(cpuPercent[0]),
-		RAMUsage:       formatBytes(memStats.Used),
-		DiskUsage:      formatBytes(diskStats.Used),
-		SwapUsage:      formatBytes(swapStats.Used),
-		NetworkTraffic: formatBytes(netStats[0].BytesSent + netStats[0].BytesRecv),
-		DownloadSpeed:  formatSpeed(downloadSpeed),
-		UploadSpeed:    formatSpeed(uploadSpeed),
+		TunnelStatus:    *m.tunnelStatus,
+		CPUUsage:        formatFloat(cpuPercent[0]),
+		RAMUsage:        convertBytesToReadable(memStats.Used),
+		DiskUsage:       convertBytesToReadable(diskStats.Used),
+		SwapUsage:       convertBytesToReadable(swapStats.Used),
+		NetworkTraffic:  convertBytesToReadable(netStats[0].BytesSent + netStats[0].BytesRecv),
+		DownloadSpeed:   formatSpeed(downloadSpeed),
+		UploadSpeed:     formatSpeed(uploadSpeed),
+		BackhaulTraffic: convertBytesToReadable(m.totalTraffic),
+		Sniffer:         map[bool]string{true: "Running", false: "Not running"}[m.sniffer],
 	}
 
 	return stats, nil
@@ -391,10 +411,6 @@ func formatSpeed(bytesPerSec float64) string {
 
 func formatFloat(value float64) string {
 	return fmt.Sprintf("%.2f%%", value)
-}
-
-func formatBytes(bytes uint64) string {
-	return fmt.Sprintf("%.2f GB", float64(bytes)/(1024*1024*1024))
 }
 
 func getNetworkStats() (*net.IOCountersStat, error) {

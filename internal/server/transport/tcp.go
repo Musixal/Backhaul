@@ -39,10 +39,11 @@ type TcpConfig struct {
 	Token          string
 	ChannelSize    int
 	Ports          []string
-	Sniffing       bool
+	Sniffer        bool
 	WebPort        int
 	SnifferLog     string
 	Heartbeat      int // in seconds
+	TunnelStatus   string
 }
 
 func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.Logger) *TcpTransport {
@@ -62,7 +63,7 @@ func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		heartbeatDuration: time.Duration(config.Heartbeat) * time.Second, // Heartbeat duration
 		heartbeatSig:      "0",                                           // Default heartbeat signal
 		chanSignal:        "1",                                           // Default channel signal
-		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
+		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
 	return server
@@ -90,7 +91,8 @@ func (s *TcpTransport) Restart() {
 	s.tunnelChannel = make(chan net.Conn, s.config.ChannelSize)
 	s.getNewConnChan = make(chan struct{}, s.config.ChannelSize)
 	s.controlChannel = nil
-	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.logger)
+	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.config.Sniffer, &s.config.TunnelStatus, s.logger)
+	s.config.TunnelStatus = ""
 
 	go s.TunnelListener()
 
@@ -124,6 +126,12 @@ func (s *TcpTransport) portConfigReader() {
 }
 
 func (s *TcpTransport) TunnelListener() {
+	// for  webui
+	if s.config.WebPort > 0 {
+		go s.usageMonitor.Monitor()
+	}
+	s.config.TunnelStatus = "Disconnected (TCP)"
+
 	listener, err := net.Listen("tcp", s.config.BindAddr)
 	if err != nil {
 		s.logger.Fatalf("failed to start listener on %s: %v", s.config.BindAddr, err)
@@ -238,9 +246,7 @@ func (s *TcpTransport) channelListener() {
 			go s.poolChecker()
 			go s.portConfigReader()
 
-			if s.config.Sniffing {
-				go s.usageMonitor.Monitor()
-			}
+			s.config.TunnelStatus = "Connected (TCP)"
 
 			return
 		}
@@ -390,7 +396,7 @@ func (s *TcpTransport) handleTCPSession(remotePort int, acceptChan chan net.Conn
 						continue innerloop
 					}
 					// Handle data exchange between connections
-					go utils.ConnectionHandler(incomingConn, tunnelConnection, s.logger, s.usageMonitor, incomingConn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffing)
+					go utils.ConnectionHandler(incomingConn, tunnelConnection, s.logger, s.usageMonitor, incomingConn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
 					break innerloop
 
 				case <-time.After(s.timeout):

@@ -37,10 +37,11 @@ type WsConfig struct {
 	RetryInterval time.Duration
 	Token         string
 	Forwarder     map[int]string
-	Sniffing      bool
+	Sniffer       bool
 	WebPort       int
 	SnifferLog    string
 	Mode          config.TransportType
+	TunnelStatus  string
 }
 
 func NewWSClient(parentCtx context.Context, config *WsConfig, logger *logrus.Logger) *WsTransport {
@@ -57,7 +58,7 @@ func NewWSClient(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 		timeout:        5 * time.Second, // Default timeout
 		heartbeatSig:   "0",             // Default heartbeat signal
 		chanSignal:     "1",             // Default channel signal
-		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, logger),
+		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
 	return client
@@ -83,13 +84,21 @@ func (c *WsTransport) Restart() {
 
 	// Re-initialize variables
 	c.controlChannel = nil
-	c.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.logger)
+	c.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.config.Sniffer, &c.config.TunnelStatus, c.logger)
+	c.config.TunnelStatus = ""
 
 	go c.ChannelDialer()
 
 }
 
 func (c *WsTransport) ChannelDialer() {
+	// for  webui
+	if c.config.WebPort > 0 {
+		go c.usageMonitor.Monitor()
+	}
+
+	c.config.TunnelStatus = "Disconnected (Websocket)"
+
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -105,11 +114,10 @@ func (c *WsTransport) ChannelDialer() {
 			}
 			c.controlChannel = tunnelWSConn
 			c.logger.Info("websocket control channel established successfully")
-			go c.channelListener()
 
-			if c.config.Sniffing {
-				go c.usageMonitor.Monitor()
-			}
+			c.config.TunnelStatus = "Connected (Websocket)"
+
+			go c.channelListener()
 
 			return
 		}
@@ -207,7 +215,7 @@ func (c *WsTransport) localDialer(tunnelConnection *websocket.Conn, port uint16)
 			return
 		}
 		c.logger.Debugf("connected to local address %s successfully", localAddress)
-		go utils.WSToTCPConnHandler(tunnelConnection, localConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffing)
+		go utils.WSToTCPConnHandler(tunnelConnection, localConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffer)
 	}
 }
 
