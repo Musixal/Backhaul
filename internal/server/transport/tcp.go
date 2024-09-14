@@ -199,7 +199,7 @@ func (s *TcpTransport) TunnelListener() {
 				case s.tunnelChannel <- conn:
 					s.logger.Debugf("accepted incoming TCP tunnel connection from %s", tcpConn.RemoteAddr().String())
 
-				case <-time.After(s.timeout): // Tunnel channel is full, discard the connection
+				default: // Tunnel channel is full, discard the connection
 					s.logger.Warnf("tunnel channel is full, discarding TCP connection from %s", tcpConn.LocalAddr().String())
 					conn.Close()
 				}
@@ -387,7 +387,7 @@ func (s *TcpTransport) localListener(localAddr string, remotePort int) {
 				case acceptChan <- tcpConn:
 					s.logger.Debugf("accepted incoming TCP connection from %s", tcpConn.RemoteAddr().String())
 
-				case <-time.After(s.timeout): // channel is full, discard the connection
+				default: // channel is full, discard the connection
 					s.logger.Warnf("channel with listener %s is full, discarding TCP connection from %s", listener.Addr().String(), tcpConn.LocalAddr().String())
 					tcpConn.Close()
 				}

@@ -379,7 +379,7 @@ func (s *WsTransport) acceptLocConn(listener net.Listener, acceptChan chan net.C
 			case acceptChan <- tcpConn:
 				s.logger.Debugf("accepted incoming TCP connection from %s", tcpConn.RemoteAddr().String())
 
-			case <-time.After(s.timeout): // channel is full, discard the connection
+			default: // channel is full, discard the connection
 				s.logger.Warnf("channel with listener %s is full, discarding TCP connection from %s", listener.Addr().String(), tcpConn.LocalAddr().String())
 				tcpConn.Close()
 			}
