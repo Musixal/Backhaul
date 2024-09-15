@@ -182,14 +182,14 @@ loop:
 			_, portBytes, err := wsSession.ReadMessage()
 
 			if err != nil {
-				c.logger.Debugf("Unable to get port from websocket connection %s: %v", wsSession.RemoteAddr().String(), err)
+				c.logger.Debugf("unable to get port from websocket connection %s: %v", wsSession.RemoteAddr().String(), err)
 				wsSession.Close()
 				return
 			}
 
 			port := binary.BigEndian.Uint16(portBytes)
 			if port == 10 {
-				c.logger.Trace("Ping recieved from the server")
+				c.logger.Trace("ping recieved from the server")
 				continue loop
 			}
 			go c.localDialer(wsSession, port)

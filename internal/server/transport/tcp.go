@@ -59,7 +59,7 @@ func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		tunnelChannel:     make(chan net.Conn, config.ChannelSize),
 		getNewConnChan:    make(chan struct{}, config.ChannelSize),
 		controlChannel:    nil,                                           // will be set when a control connection is established
-		timeout:           3 * time.Second,                               // Default timeout
+		timeout:           3 * time.Second,                               // Default timeout for waiting for a tunnel connection
 		heartbeatDuration: time.Duration(config.Heartbeat) * time.Second, // Heartbeat duration
 		heartbeatSig:      "0",                                           // Default heartbeat signal
 		chanSignal:        "1",                                           // Default channel signal
@@ -145,6 +145,7 @@ func (s *TcpTransport) TunnelListener() {
 
 	// try to establish a new channel
 	if s.controlChannel == nil {
+		s.logger.Info("control channel not found, attempting to establish a new session")
 		go s.channelListener()
 	}
 
@@ -169,7 +170,7 @@ func (s *TcpTransport) TunnelListener() {
 					continue
 				}
 
-				// new idea to drop all illegal packets
+				// Drop all suspicious packets from other address rather than server
 				if s.controlChannel != nil && s.controlChannel.RemoteAddr().(*net.TCPAddr).IP.String() != tcpConn.RemoteAddr().(*net.TCPAddr).IP.String() {
 					s.logger.Warnf("suspicious packet from %v. expected address: %v. discarding packet...", tcpConn.RemoteAddr().(*net.TCPAddr).IP.String(), s.controlChannel.RemoteAddr().(*net.TCPAddr).IP.String())
 					tcpConn.Close()
@@ -217,13 +218,27 @@ func (s *TcpTransport) channelListener() {
 			return
 
 		default:
-			s.logger.Info("control channel not found, attempting to establish a new session")
 			incomingConnection := <-s.tunnelChannel
-			msg, err := utils.ReceiveBinaryString(incomingConnection)
-			if err != nil {
-				s.logger.Errorf("Failed to receive channel signal: %v", err)
+
+			// Set a read deadline for the token response
+			if err := incomingConnection.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+				s.logger.Errorf("failed to set read deadline: %v", err)
+				incomingConnection.Close()
 				continue
 			}
+			msg, err := utils.ReceiveBinaryString(incomingConnection)
+			if err != nil {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					s.logger.Warn("timeout while waiting for control channel signal")
+				} else {
+					s.logger.Errorf("failed to receive control channel signal: %v", err)
+				}
+				incomingConnection.Close() // Close connection on error or timeout
+				continue
+			}
+
+			// Resetting the deadline (removes any existing deadline)
+			incomingConnection.SetReadDeadline(time.Time{})
 
 			if msg != s.config.Token {
 				s.logger.Warnf("invalid security token received: %s", msg)
@@ -232,7 +247,7 @@ func (s *TcpTransport) channelListener() {
 
 			err = utils.SendBinaryString(incomingConnection, s.config.Token)
 			if err != nil {
-				s.logger.Errorf("Failed to send security token: %v", err)
+				s.logger.Errorf("failed to send security token: %v", err)
 				continue
 			}
 
@@ -267,13 +282,14 @@ func (s *TcpTransport) heartbeat() {
 				go s.Restart()
 				return
 			}
+
 			err := utils.SendBinaryString(s.controlChannel, s.heartbeatSig)
 			if err != nil {
 				s.logger.Error("failed to send heartbeat signal, attempting to restart server...")
 				go s.Restart()
 				return
 			}
-			s.logger.Debug("heartbeat signal sent successfully")
+			s.logger.Trace("heartbeat signal sent successfully")
 		}
 	}
 }
@@ -291,7 +307,7 @@ func (s *TcpTransport) poolChecker() {
 			currentPoolSize := len(s.tunnelChannel)
 			if currentPoolSize < s.config.ConnectionPool {
 				neededConnections := s.config.ConnectionPool - currentPoolSize
-				s.logger.Tracef("pool size is %d, adding %d new connections", currentPoolSize, neededConnections)
+				//s.logger.Tracef("pool size is %d, adding %d new connections", currentPoolSize, neededConnections)
 
 			loop:
 				for i := 0; i < neededConnections; i++ {

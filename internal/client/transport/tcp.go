@@ -49,7 +49,7 @@ func NewTCPClient(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		cancel:         cancel,
 		logger:         logger,
 		controlChannel: nil,              // will be set when a control connection is established
-		timeout:        30 * time.Second, // Default timeout
+		timeout:        30 * time.Second, // Default timeout for tcpDialer
 		heartbeatSig:   "0",              // Default heartbeat signal
 		chanSignal:     "1",              // Default channel signal
 		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
@@ -92,16 +92,16 @@ func (c *TcpTransport) ChannelDialer() {
 	}
 
 	c.config.TunnelStatus = "Disconnected (TCP)"
+	c.logger.Info("trying to establish a new control channel connection")
 
-	for c.controlChannel == nil {
+	for {
 		select {
 		case <-c.ctx.Done():
 			return
 		default:
-			c.logger.Info("trying to establish a new control channel connection")
 			tunnelTCPConn, err := c.tcpDialer(c.config.RemoteAddr, c.config.Nodelay)
 			if err != nil {
-				c.logger.Errorf("error dialing remote address %s: %v", c.config.RemoteAddr, err)
+				c.logger.Errorf("channel dialer: error dialing remote address %s: %v", c.config.RemoteAddr, err)
 				time.Sleep(c.config.RetryInterval)
 				continue
 			}
@@ -117,34 +117,34 @@ func (c *TcpTransport) ChannelDialer() {
 			// Set a read deadline for the token response
 			if err := tunnelTCPConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
 				c.logger.Errorf("failed to set read deadline: %v", err)
+				tunnelTCPConn.Close()
+				continue
 			}
-
 			// Receive response
 			message, err := utils.ReceiveBinaryString(tunnelTCPConn)
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					c.logger.Warn("timeout while waiting for control channel response")
 				} else {
-					c.logger.Errorf("Failed to receive control channel response: %v", err)
+					c.logger.Errorf("failed to receive control channel response: %v", err)
 				}
 				tunnelTCPConn.Close() // Close connection on error or timeout
 				time.Sleep(c.config.RetryInterval)
 				continue
 			}
+			// Resetting the deadline (removes any existing deadline)
+			tunnelTCPConn.SetReadDeadline(time.Time{})
 
 			if message == c.config.Token {
 				c.controlChannel = tunnelTCPConn
 				c.logger.Info("control channel established successfully")
 
 				c.config.TunnelStatus = "Connected (TCP)"
-
-				// Resetting the deadline (removes any existing deadline)
-				tunnelTCPConn.SetReadDeadline(time.Time{})
 				go c.channelListener()
 
-				return
+				return // break the loop
 			} else {
-				c.logger.Errorf("Invalid token received. Expected: %s, Received: %s. Retrying...", c.config.Token, message)
+				c.logger.Errorf("invalid token received. Expected: %s, Received: %s. Retrying...", c.config.Token, message)
 				tunnelTCPConn.Close() // Close connection if the token is invalid
 				time.Sleep(c.config.RetryInterval)
 				continue
@@ -179,7 +179,7 @@ func (c *TcpTransport) channelListener() {
 			}
 		}
 	}
-	c.logger.Error("Control channel connection closed unexpectedly, restarting client")
+	c.logger.Error("control channel connection closed unexpectedly, restarting client")
 	go c.Restart()
 
 }
@@ -194,7 +194,7 @@ func (c *TcpTransport) tunnelDialer() {
 			c.logger.Warn("No control channel found, cannot initiate tunnel dialer")
 			return
 		}
-		c.logger.Debugf("Initiating new connection to tunnel server at %s", c.config.RemoteAddr)
+		c.logger.Debugf("initiating new connection to tunnel server at %s", c.config.RemoteAddr)
 
 		// Dial to the tunnel server
 		tunnelTCPConn, err := c.tcpDialer(c.config.RemoteAddr, c.config.Nodelay)
@@ -213,7 +213,7 @@ func (c *TcpTransport) handleTCPSession(tcpsession net.Conn) {
 	default:
 		port, err := utils.ReceiveBinaryInt(tcpsession)
 		if err != nil {
-			c.logger.Errorf("Failed to receive port from tunnel connection %s: %v", tcpsession.RemoteAddr().String(), err)
+			c.logger.Errorf("failed to receive port from tunnel connection %s: %v", tcpsession.RemoteAddr().String(), err)
 			tcpsession.Close()
 			return
 		}
@@ -234,7 +234,7 @@ func (c *TcpTransport) localDialer(tunnelConnection net.Conn, port uint16) {
 
 		localConnection, err := c.tcpDialer(localAddress, c.config.Nodelay)
 		if err != nil {
-			c.logger.Errorf("Failed to connect to local address %s: %v", localAddress, err)
+			c.logger.Errorf("failed to connect to local address %s: %v", localAddress, err)
 			tunnelConnection.Close()
 			return
 		}
