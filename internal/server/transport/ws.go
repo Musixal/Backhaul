@@ -287,7 +287,10 @@ func (s *WsTransport) TunnelListener() {
 
 	if s.config.Mode == config.WS {
 		go func() {
-			s.logger.Infof("websocket server starting, listening on %s", addr)
+			s.logger.Infof("ws server starting, listening on %s", addr)
+			if s.controlChannel == nil {
+				s.logger.Info("waiting for ws control channel connection")
+			}
 			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				s.logger.Fatalf("failed to listen on %s: %v", addr, err)
 			}
@@ -295,6 +298,9 @@ func (s *WsTransport) TunnelListener() {
 	} else {
 		go func() {
 			s.logger.Infof("wss server starting, listening on %s", addr)
+			if s.controlChannel == nil {
+				s.logger.Info("waiting for wss control channel connection")
+			}
 			if err := server.ListenAndServeTLS(s.config.TLSCertFile, s.config.TLSKeyFile); err != nil && err != http.ErrServerClosed {
 				s.logger.Fatalf("failed to listen on %s: %v", addr, err)
 			}
