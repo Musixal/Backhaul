@@ -48,10 +48,10 @@ func NewTCPClient(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		ctx:            ctx,
 		cancel:         cancel,
 		logger:         logger,
-		controlChannel: nil,             // will be set when a control connection is established
-		timeout:        5 * time.Second, // Default timeout
-		heartbeatSig:   "0",             // Default heartbeat signal
-		chanSignal:     "1",             // Default channel signal
+		controlChannel: nil,              // will be set when a control connection is established
+		timeout:        30 * time.Second, // Default timeout
+		heartbeatSig:   "0",              // Default heartbeat signal
+		chanSignal:     "1",              // Default channel signal
 		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
