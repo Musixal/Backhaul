@@ -16,6 +16,8 @@ Welcome to the **`Backhaul`** project! This project provides a high-performance 
       - [TCP Multiplexing Configuration](#tcp-multiplexing-configuration)
       - [WebSocket Configuration](#websocket-configuration)
       - [Secure WebSocket Configuration](#secure-websocket-configuration)
+      - [WS Multiplexing Configuration](#ws-multiplexing-configuration)
+      - [WSS Multiplexing Configuration](#wss-multiplexing-configuration)
 4. [Generating a Self-Signed TLS Certificate with OpenSSL](#generating-a-self-signed-tls-certificate-with-openssl)
 5. [Running backhaul as a service](#running-backhaul-as-a-service)
 6. [FAQ](#faq)
@@ -65,7 +67,7 @@ To start using the solution, you'll need to configure both server and client com
     ```toml
     [server]# Local, IRAN
     bind_addr = "0.0.0.0:3080"    # Address and port for the server to listen on (mandatory).
-    transport = "tcp"             # Protocol to use ("tcp", "tcpmux", or "ws", optional, default: "tcp").
+    transport = "tcp"             # Protocol to use ("tcp", "tcpmux", or "ws", mandatory).
     token = "your_token"          # Authentication token for secure communication (optional).
     keepalive_period = 20         # Interval in seconds to send keep-alive packets.(optional, default: 20 seconds)
     nodelay = false               # Enable TCP_NODELAY (optional, default: false).
@@ -101,7 +103,7 @@ To start using the solution, you'll need to configure both server and client com
    ```toml
    [client]  # Behind NAT, firewall-blocked
    remote_addr = "0.0.0.0:3080"  # Server address and port (mandatory).
-   transport = "tcp"             # Protocol to use ("tcp", "tcpmux", or "ws", optional, default: "tcp").
+   transport = "tcp"             # Protocol to use ("tcp", "tcpmux", or "ws", mandatory).
    token = "your_token"          # Authentication token for secure communication (optional).
    keepalive_period = 20         # Interval in seconds to send keep-alive packets. (optional, default: 20 seconds)
    nodelay = false               # Use TCP_NODELAY (optional, default: false).
@@ -258,6 +260,57 @@ You can configure the `server` and `client` to use different transport protocols
 * **Details**:
 
    * Refer to the next section for instructions on generating `tls_cert` and `tls_key`.
+
+
+#### WS Multiplexing Configuration
+* **Server**:
+
+   ```toml
+   [server]
+   bind_addr = "0.0.0.0:3080"
+   transport = "wsmux"
+   token = "your_token" 
+   mux_session = 1
+   nodelay = true 
+   ports = []
+   ```
+* **Client**:
+
+   ```toml
+   [client]
+   remote_addr = "0.0.0.0:3080"
+   transport = "wsmux"
+   token = "your_token" 
+   mux_session = 1
+   nodelay = true 
+   ```
+
+#### WSS Multiplexing Configuration
+* **Server**:
+
+   ```toml
+   [server]
+   bind_addr = "0.0.0.0:443"
+   transport = "wssmux"
+   token = "your_token" 
+   mux_session = 1
+   nodelay = true 
+   tls_cert = "/root/server.crt"      
+   tls_key = "/root/server.key"
+   ports = []
+   ```
+* **Client**:
+
+   ```toml
+   [client]
+   remote_addr = "0.0.0.0:443"
+   transport = "wssmux"
+   token = "your_token" 
+   mux_session = 1
+   nodelay = true 
+   ```
+
+
 
 ## Generating a Self-Signed TLS Certificate with OpenSSL
 
