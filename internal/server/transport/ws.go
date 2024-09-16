@@ -228,11 +228,6 @@ func (s *WsTransport) TunnelListener() {
 		},
 	}
 
-	// TLS configuration using the certificate and key files
-	// tlsConfig := &tls.Config{
-	// 	MinVersion: tls.VersionTLS12,
-	// }
-
 	// Create an HTTP server
 	server := &http.Server{
 		Addr:        addr,

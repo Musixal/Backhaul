@@ -7,7 +7,6 @@ import (
 )
 
 const ( // Default values
-	defaultTransport      = config.TCP
 	defaultToken          = "musix"
 	defaultChannelSize    = 2048
 	defaultRetryInterval  = 1 // only for client
@@ -25,25 +24,6 @@ const ( // Default values
 )
 
 func applyDefaults(cfg *config.Config) {
-	// Transport
-	switch cfg.Server.Transport {
-	case config.TCP, config.TCPMUX, config.WS, config.WSS: // valid values
-	case "":
-		cfg.Server.Transport = defaultTransport
-	default:
-		logger.Warnf("invalid transport value '%s' for server, defaulting to '%s'", cfg.Server.Transport, defaultTransport)
-		cfg.Server.Transport = defaultTransport
-	}
-
-	switch cfg.Client.Transport {
-	case config.TCP, config.TCPMUX, config.WS, config.WSS: //valid values
-	case "":
-		cfg.Client.Transport = defaultTransport
-	default:
-		logger.Warnf("invalid transport value '%s' for client, defaulting to '%s'", cfg.Client.Transport, defaultTransport)
-		cfg.Client.Transport = defaultTransport
-	}
-
 	// Token
 	if cfg.Server.Token == "" {
 		cfg.Server.Token = defaultToken

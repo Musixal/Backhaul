@@ -99,6 +99,32 @@ func (s *Server) Start() {
 		wsServer := transport.NewWSServer(s.ctx, wsConfig, s.logger)
 		go wsServer.TunnelListener()
 
+	} else if s.config.Transport == config.WSMUX || s.config.Transport == config.WSSMUX {
+		wsMuxConfig := &transport.WsMuxConfig{
+			BindAddr:         s.config.BindAddr,
+			Nodelay:          s.config.Nodelay,
+			KeepAlive:        time.Duration(s.config.Keepalive) * time.Second,
+			Token:            s.config.Token,
+			MuxSession:       s.config.MuxSession,
+			ChannelSize:      s.config.ChannelSize,
+			Ports:            s.config.Ports,
+			MuxVersion:       s.config.MuxVersion,
+			MaxFrameSize:     s.config.MaxFrameSize,
+			MaxReceiveBuffer: s.config.MaxReceiveBuffer,
+			MaxStreamBuffer:  s.config.MaxStreamBuffer,
+			Sniffer:          s.config.Sniffer,
+			WebPort:          s.config.WebPort,
+			SnifferLog:       s.config.SnifferLog,
+			Mode:             s.config.Transport,
+			TLSCertFile:      s.config.TLSCertFile,
+			TLSKeyFile:       s.config.TLSKeyFile,
+		}
+
+		wsMuxServer := transport.NewWSMuxServer(s.ctx, wsMuxConfig, s.logger)
+		go wsMuxServer.TunnelListener()
+
+	} else {
+		s.logger.Fatal("invalid transport type: ", s.config.Transport)
 	}
 
 	<-s.ctx.Done()

@@ -2,11 +2,15 @@ package transport
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
+	"github.com/musix/backhaul/internal/config"
 	"github.com/musix/backhaul/internal/utils"
 	"github.com/musix/backhaul/internal/web"
 
@@ -14,8 +18,8 @@ import (
 	"github.com/xtaci/smux"
 )
 
-type TcpMuxTransport struct {
-	config       *TcpMuxConfig
+type WsMuxTransport struct {
+	config       *WsMuxConfig
 	ctx          context.Context
 	cancel       context.CancelFunc
 	logger       *logrus.Logger
@@ -25,7 +29,7 @@ type TcpMuxTransport struct {
 	usageMonitor *web.Usage
 }
 
-type TcpMuxConfig struct {
+type WsMuxConfig struct {
 	RemoteAddr       string
 	Nodelay          bool
 	KeepAlive        time.Duration
@@ -41,14 +45,15 @@ type TcpMuxConfig struct {
 	WebPort          int
 	SnifferLog       string
 	TunnelStatus     string
+	Mode             config.TransportType
 }
 
-func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logrus.Logger) *TcpMuxTransport {
+func NewWSMuxClient(parentCtx context.Context, config *WsMuxConfig, logger *logrus.Logger) *WsMuxTransport {
 	// Create a derived context from the parent context
 	ctx, cancel := context.WithCancel(parentCtx)
 
 	// Initialize the TcpTransport struct
-	client := &TcpMuxTransport{
+	client := &WsMuxTransport{
 		config:       config,
 		ctx:          ctx,
 		cancel:       cancel,
@@ -61,7 +66,7 @@ func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logru
 	return client
 }
 
-func (c *TcpMuxTransport) Restart() {
+func (c *WsMuxTransport) Restart() {
 	if !c.restartMutex.TryLock() {
 		c.logger.Warn("client is already restarting")
 		return
@@ -88,13 +93,13 @@ func (c *TcpMuxTransport) Restart() {
 
 }
 
-func (c *TcpMuxTransport) MuxDialer() {
+func (c *WsMuxTransport) MuxDialer() {
 	// for  webui
 	if c.config.WebPort > 0 {
 		go c.usageMonitor.Monitor()
 	}
 
-	c.config.TunnelStatus = "Disconnected (TCPMux)"
+	c.config.TunnelStatus = "Disconnected (WSMux)"
 
 	for id := 0; id < c.config.MuxSession; id++ {
 	innerloop:
@@ -105,7 +110,7 @@ func (c *TcpMuxTransport) MuxDialer() {
 			default:
 				c.logger.Debugf("initiating new mux session to address %s (session ID: %d)", c.config.RemoteAddr, id)
 				// Dial to the tunnel server
-				tunnelTCPConn, err := c.tcpDialer(c.config.RemoteAddr, c.config.Nodelay)
+				tunnelTCPConn, err := c.wsDialer(c.config.RemoteAddr, "/channel")
 				if err != nil {
 					c.logger.Errorf("failed to dial tunnel server at %s: %v", c.config.RemoteAddr, err)
 					time.Sleep(c.config.RetryInterval)
@@ -123,44 +128,23 @@ func (c *TcpMuxTransport) MuxDialer() {
 				}
 
 				// SMUX server
-				session, err := smux.Server(tunnelTCPConn, &config)
+				session, err := smux.Server(tunnelTCPConn.UnderlyingConn(), &config)
 				if err != nil {
 					c.logger.Errorf("failed to create mux session: %v", err)
 					continue
 				}
-				// auth
-				stream, err := session.OpenStream()
-				if err != nil {
-					c.logger.Errorf("unable to open a new mux stream for auth: %v", err)
-					session.Close()
-					continue
-				}
 
-				err = utils.SendBinaryString(stream, c.config.Token)
-				if err != nil {
-					c.logger.Errorf("failed to send token: %v", err)
-					session.Close()
-					continue
-				}
-
-				msg, err := utils.ReceiveBinaryString(stream)
-				if err == nil && msg == "ok" {
-					c.smuxSession[id] = session
-					c.logger.Infof("Mux session established successfully (session ID: %d)", id)
-					go c.handleMUXStreams(id)
-					break innerloop
-				} else {
-					c.logger.Errorf("failed to establish a new session. Token error or unexpected response: %v", err)
-				}
-
+				c.smuxSession[id] = session
+				c.logger.Infof("mux session established successfully (session ID: %d)", id)
+				go c.handleMUXStreams(id)
+				break innerloop
 			}
 		}
 	}
-
-	c.config.TunnelStatus = "Connected (TCPMux)"
+	c.config.TunnelStatus = "Connected (WSMux)"
 }
 
-func (c *TcpMuxTransport) handleMUXStreams(id int) {
+func (c *WsMuxTransport) handleMUXStreams(id int) {
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -179,7 +163,45 @@ func (c *TcpMuxTransport) handleMUXStreams(id int) {
 	}
 }
 
-func (c *TcpMuxTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPConn, error) {
+func (c *WsMuxTransport) handleTCPSession(tcpsession net.Conn) {
+	select {
+	case <-c.ctx.Done():
+		return
+	default:
+		port, err := utils.ReceiveBinaryInt(tcpsession)
+
+		if err != nil {
+			c.logger.Tracef("unable to get the port from the %s connection: %v", tcpsession.RemoteAddr().String(), err)
+			tcpsession.Close()
+			return
+		}
+		go c.localDialer(tcpsession, port)
+
+	}
+}
+
+func (c *WsMuxTransport) localDialer(tunnelConnection net.Conn, port uint16) {
+	select {
+	case <-c.ctx.Done():
+		return
+	default:
+		localAddress, ok := c.config.Forwarder[int(port)]
+		if !ok {
+			localAddress = fmt.Sprintf("127.0.0.1:%d", port)
+		}
+
+		localConnection, err := c.tcpDialer(localAddress, c.config.Nodelay)
+		if err != nil {
+			c.logger.Errorf("failed to connect to local address %s: %v", localAddress, err)
+			tunnelConnection.Close()
+			return
+		}
+		c.logger.Debugf("connected to local address %s successfully", localAddress)
+		go utils.ConnectionHandler(localConnection, tunnelConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffer)
+	}
+}
+
+func (c *WsMuxTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPConn, error) {
 	// Resolve the address to a TCP address
 	tcpAddr, err := net.ResolveTCPAddr("tcp", address)
 	if err != nil {
@@ -217,40 +239,56 @@ func (c *TcpMuxTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPCo
 	return tcpConn, nil
 }
 
-func (c *TcpMuxTransport) handleTCPSession(tcpsession net.Conn) {
-	select {
-	case <-c.ctx.Done():
-		return
-	default:
-		port, err := utils.ReceiveBinaryInt(tcpsession)
-
-		if err != nil {
-			c.logger.Tracef("unable to get the port from the %s connection: %v", tcpsession.RemoteAddr().String(), err)
-			tcpsession.Close()
-			return
-		}
-		go c.localDialer(tcpsession, port)
-
+func (c *WsMuxTransport) wsDialer(addr string, path string) (*websocket.Conn, error) {
+	// Create a TLS configuration that allows insecure connections
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: true, // Skip server certificate verification
 	}
-}
 
-func (c *TcpMuxTransport) localDialer(tunnelConnection net.Conn, port uint16) {
-	select {
-	case <-c.ctx.Done():
-		return
-	default:
-		localAddress, ok := c.config.Forwarder[int(port)]
-		if !ok {
-			localAddress = fmt.Sprintf("127.0.0.1:%d", port)
-		}
+	// Setup headers with authorization
+	headers := http.Header{}
+	headers.Add("Authorization", fmt.Sprintf("Bearer %v", c.config.Token))
 
-		localConnection, err := c.tcpDialer(localAddress, c.config.Nodelay)
-		if err != nil {
-			c.logger.Errorf("failed to connect to local address %s: %v", localAddress, err)
-			tunnelConnection.Close()
-			return
+	var wsURL string
+	dialer := websocket.Dialer{}
+	if c.config.Mode == config.WSMUX {
+		wsURL = fmt.Sprintf("ws://%s%s", addr, path)
+		dialer = websocket.Dialer{
+			HandshakeTimeout: c.timeout, // Set handshake timeout
+			NetDial: func(_, addr string) (net.Conn, error) {
+				conn, err := net.DialTimeout("tcp", addr, c.timeout)
+				if err != nil {
+					return nil, err
+				}
+				tcpConn := conn.(*net.TCPConn)
+				tcpConn.SetKeepAlive(true)                     // Enable TCP keepalive
+				tcpConn.SetKeepAlivePeriod(c.config.KeepAlive) // Set keepalive period
+				return tcpConn, nil
+			},
 		}
-		c.logger.Debugf("connected to local address %s successfully", localAddress)
-		go utils.ConnectionHandler(localConnection, tunnelConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffer)
+	} else {
+		wsURL = fmt.Sprintf("wss://%s%s", addr, path)
+		dialer = websocket.Dialer{
+			TLSClientConfig:  tlsConfig, // Pass the insecure TLS config here
+			HandshakeTimeout: c.timeout, // Set handshake timeout
+			NetDial: func(_, addr string) (net.Conn, error) {
+				conn, err := net.DialTimeout("tcp", addr, c.timeout)
+				if err != nil {
+					return nil, err
+				}
+				tcpConn := conn.(*net.TCPConn)
+				tcpConn.SetKeepAlive(true)                     // Enable TCP keepalive
+				tcpConn.SetKeepAlivePeriod(c.config.KeepAlive) // Set keepalive period
+				return tcpConn, nil
+			},
+		}
 	}
+
+	// Dial to the WebSocket server
+	tunnelWSConn, _, err := dialer.Dial(wsURL, headers)
+	if err != nil {
+		return nil, err
+	}
+
+	return tunnelWSConn, nil
 }

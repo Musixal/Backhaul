@@ -96,6 +96,29 @@ func (c *Client) Start() {
 		}
 		WsClient := transport.NewWSClient(c.ctx, WsConfig, c.logger)
 		go WsClient.ChannelDialer()
+	} else if c.config.Transport == config.WSMUX || c.config.Transport == config.WSSMUX {
+		wsMuxConfig := &transport.WsMuxConfig{
+			RemoteAddr:       c.config.RemoteAddr,
+			Nodelay:          c.config.Nodelay,
+			KeepAlive:        time.Duration(c.config.Keepalive) * time.Second,
+			RetryInterval:    time.Duration(c.config.RetryInterval) * time.Second,
+			Token:            c.config.Token,
+			MuxSession:       c.config.MuxSession,
+			MuxVersion:       c.config.MuxVersion,
+			MaxFrameSize:     c.config.MaxFrameSize,
+			MaxReceiveBuffer: c.config.MaxReceiveBuffer,
+			MaxStreamBuffer:  c.config.MaxStreamBuffer,
+			Forwarder:        c.forwarderReader(c.config.Forwarder),
+			Sniffer:          c.config.Sniffer,
+			WebPort:          c.config.WebPort,
+			SnifferLog:       c.config.SnifferLog,
+			Mode:             c.config.Transport,
+		}
+		wsMuxClient := transport.NewWSMuxClient(c.ctx, wsMuxConfig, c.logger)
+		go wsMuxClient.MuxDialer()
+
+	} else {
+		c.logger.Fatal("invalid transport type: ", c.config.Transport)
 	}
 
 	<-c.ctx.Done()

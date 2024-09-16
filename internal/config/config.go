@@ -8,6 +8,8 @@ const (
 	TCPMUX TransportType = "tcpmux"
 	WS     TransportType = "ws"
 	WSS    TransportType = "wss"
+	WSMUX  TransportType = "wsmux"
+	WSSMUX TransportType = "wssmux"
 )
 
 // ServerConfig represents the configuration for the server.
