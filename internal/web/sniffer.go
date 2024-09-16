@@ -95,7 +95,7 @@ func (m *Usage) Monitor() {
 	// start save data
 	if m.sniffer {
 		go func() {
-			ticker := time.NewTicker(5 * time.Second) // every 5 seconds
+			ticker := time.NewTicker(15 * time.Second) // every 5 seconds
 			defer ticker.Stop()
 
 			for {
