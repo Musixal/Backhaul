@@ -80,7 +80,7 @@ To start using the solution, you'll need to configure both server and client com
     mux_streambuffer = 65536      # 256 KB. The maximum buffer size per individual stream within a connection. (optional)
     sniffer = false               # Enable or disable network sniffing for monitoring data. (optional, default false)
     web_port = 2060               # Port number for the web interface or monitoring interface. (optional, default 2060).
-    sniffer_log = "backhaul.json" # Filename used to store network traffic and usage data logs. (optional, default backhaul.json)
+    sniffer_log = "/root/backhaul.json" # Filename used to store network traffic and usage data logs. (optional, default backhaul.json)
     tls_cert = "/root/server.crt" # Path to the TLS certificate file for wss. (mandatory).
     tls_key = "/root/server.key"  # Path to the TLS private key file for wss.(mandatory).
 
@@ -114,7 +114,7 @@ To start using the solution, you'll need to configure both server and client com
    mux_streambuffer = 65536      # 256 KB. The maximum buffer size per individual stream within a connection. (optional)
    sniffer = false               # Enable or disable network sniffing for monitoring data. (optional, default false)
    web_port = 2060               # Port number for the web interface or monitoring interface. (optional, default 2060).
-   sniffer_log = "backhaul.json" # Filename used to store network traffic and usage data logs. (optional, default backhaul.json)
+   sniffer_log = "/root/backhaul.json" # Filename used to store network traffic and usage data logs. (optional, default backhaul.json)
 
    forwarder = [ # Forward incoming connection to another address. optional.
       "4000=IP:PORT",
