@@ -367,4 +367,4 @@ This project is licensed under the AGPL-3.0 license. See the LICENSE file for de
     </a>
 
 ## Stargazers over time
-[![Stargazers over time](https://starchart.cc/Musixal/Backhaul.svg?variant=adaptive)](https://starchart.cc/Musixal/Backhaul)
+[![Stargazers over time](https://starchart.cc/Musixal/Backhaul.svg?variant=light)](https://starchart.cc/Musixal/Backhaul)
