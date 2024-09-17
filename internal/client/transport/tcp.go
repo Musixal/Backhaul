@@ -51,7 +51,7 @@ func NewTCPClient(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		cancel:         cancel,
 		logger:         logger,
 		controlChannel: nil,              // will be set when a control connection is established
-		timeout:        30 * time.Second, // Default timeout for tcpDialer
+		timeout:        10 * time.Second, // Default timeout for tcpDialer
 		heartbeatSig:   "0",              // Default heartbeat signal
 		chanSignal:     "1",              // Default channel signal
 		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
@@ -164,23 +164,33 @@ func (c *TcpTransport) closeControlChannel(reason string) {
 	if c.controlChannel != nil {
 		_ = utils.SendBinaryString(c.controlChannel, "closed")
 		c.controlChannel.Close()
-		c.logger.Debugf("control channel closed due to %s", reason)
+		c.logger.Infof("control channel closed due to %s", reason)
 	}
 }
 
-// listen to the channel signals
 func (c *TcpTransport) channelListener() {
-	for c.controlChannel != nil {
-		select {
-		case <-c.ctx.Done():
-			return
-		default:
+	msgChan := make(chan string)
+	errChan := make(chan error)
+
+	// Goroutine to handle the blocking ReceiveBinaryString
+	go func() {
+		for {
 			msg, err := utils.ReceiveBinaryString(c.controlChannel)
 			if err != nil {
-				c.logger.Error("error receiving channel signal, restarting client")
-				go c.Restart()
+				errChan <- err
 				return
 			}
+			msgChan <- msg
+		}
+	}()
+
+	// Main loop to listen for context cancellation or received messages
+	for {
+		select {
+		case <-c.ctx.Done():
+			c.logger.Debug("context done, stopping channel listener")
+			return
+		case msg := <-msgChan:
 			switch msg {
 			case c.chanSignal:
 				c.logger.Debug("channel signal received, initiating tunnel dialer")
@@ -192,11 +202,13 @@ func (c *TcpTransport) channelListener() {
 				go c.Restart()
 				return
 			}
+		case err := <-errChan:
+			// Handle errors from the control channel
+			c.logger.Error("error receiving channel signal, restarting client: ", err)
+			go c.Restart()
+			return
 		}
 	}
-	c.logger.Error("control channel connection closed unexpectedly, restarting client")
-	go c.Restart()
-
 }
 
 // Dialing to the tunnel server, chained functions, without retry
@@ -228,7 +240,7 @@ func (c *TcpTransport) handleTCPSession(tcpsession net.Conn) {
 	default:
 		port, err := utils.ReceiveBinaryInt(tcpsession)
 		if err != nil {
-			c.logger.Errorf("failed to receive port from tunnel connection %s: %v", tcpsession.RemoteAddr().String(), err)
+			c.logger.Debugf("failed to receive port from tunnel connection %s: %v", tcpsession.RemoteAddr().String(), err)
 			tcpsession.Close()
 			return
 		}
@@ -284,9 +296,8 @@ func (c *TcpTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPConn,
 		return nil, fmt.Errorf("failed to convert net.Conn to *net.TCPConn")
 	}
 
-	if tcpnodelay {
-		// Enable TCP_NODELAY
-		err = tcpConn.SetNoDelay(true)
+	if !tcpnodelay {
+		err = tcpConn.SetNoDelay(false)
 		if err != nil {
 			tcpConn.Close()
 			return nil, err

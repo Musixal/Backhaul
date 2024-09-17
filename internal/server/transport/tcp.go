@@ -201,12 +201,12 @@ func (s *TcpTransport) TunnelListener() {
 					continue
 				}
 
-				// trying to enable tcpnodelay
-				if s.config.Nodelay {
+				// trying to set tcpnodelay
+				if !s.config.Nodelay {
 					if err := tcpConn.SetNoDelay(s.config.Nodelay); err != nil {
 						s.logger.Warnf("failed to set TCP_NODELAY for %s: %v", tcpConn.RemoteAddr().String(), err)
 					} else {
-						s.logger.Tracef("TCP_NODELAY enabled for %s", tcpConn.RemoteAddr().String())
+						s.logger.Tracef("TCP_NODELAY disabled for %s", tcpConn.RemoteAddr().String())
 					}
 				}
 
@@ -243,7 +243,6 @@ func (s *TcpTransport) channelListener() {
 
 		default:
 			incomingConnection := <-s.tunnelChannel
-
 			// Set a read deadline for the token response
 			if err := incomingConnection.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
 				s.logger.Errorf("failed to set read deadline: %v", err)
@@ -320,7 +319,7 @@ func (s *TcpTransport) heartbeat() {
 }
 
 func (s *TcpTransport) poolChecker() {
-	ticker := time.NewTicker(time.Millisecond * 500)
+	ticker := time.NewTicker(time.Millisecond * 350)
 	defer ticker.Stop()
 
 	for {
@@ -332,7 +331,6 @@ func (s *TcpTransport) poolChecker() {
 			currentPoolSize := len(s.tunnelChannel)
 			if currentPoolSize < s.config.ConnectionPool {
 				neededConnections := s.config.ConnectionPool - currentPoolSize
-				//s.logger.Tracef("pool size is %d, adding %d new connections", currentPoolSize, neededConnections)
 
 			loop:
 				for i := 0; i < neededConnections; i++ {
@@ -483,7 +481,7 @@ func (s *TcpTransport) handleTCPSession(remotePort int, acceptChan chan net.Conn
 				case tunnelConnection := <-s.tunnelChannel:
 					// Send the target port over the connection
 					if err := utils.SendBinaryInt(tunnelConnection, uint16(remotePort)); err != nil {
-						s.logger.Warnf("%v", err) // failed to send port number
+						s.logger.Debugf("%v", err) // failed to send port number
 						tunnelConnection.Close()
 						continue innerloop
 					}

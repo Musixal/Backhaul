@@ -207,9 +207,8 @@ func (c *TcpMuxTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPCo
 		return nil, fmt.Errorf("failed to convert net.Conn to *net.TCPConn")
 	}
 
-	if tcpnodelay {
-		// Enable TCP_NODELAY
-		err = tcpConn.SetNoDelay(true)
+	if !tcpnodelay {
+		err = tcpConn.SetNoDelay(false)
 		if err != nil {
 			tcpConn.Close()
 			return nil, err

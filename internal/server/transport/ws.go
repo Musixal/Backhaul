@@ -224,7 +224,7 @@ func (s *WsTransport) heartbeat() {
 }
 
 func (s *WsTransport) poolChecker() {
-	ticker := time.NewTicker(time.Millisecond * 500)
+	ticker := time.NewTicker(time.Millisecond * 350)
 	defer ticker.Stop()
 
 	for {
@@ -236,7 +236,6 @@ func (s *WsTransport) poolChecker() {
 			currentPoolSize := len(s.tunnelChannel)
 			if currentPoolSize < s.config.ConnectionPool {
 				neededConnections := s.config.ConnectionPool - currentPoolSize
-				s.logger.Tracef("pool size is %d, adding %d new connections", currentPoolSize, neededConnections)
 
 			loop:
 				for i := 0; i < neededConnections; i++ {
@@ -417,7 +416,7 @@ func (s *WsTransport) acceptLocConn(listener net.Listener, acceptChan chan net.C
 			}
 
 			// trying to enable tcpnodelay
-			if s.config.Nodelay {
+			if !s.config.Nodelay {
 				if err := tcpConn.SetNoDelay(s.config.Nodelay); err != nil {
 					s.logger.Warnf("failed to set TCP_NODELAY for %s: %v", tcpConn.RemoteAddr().String(), err)
 				} else {
