@@ -22,6 +22,7 @@ import (
 
 type WsMuxTransport struct {
 	config       *WsMuxConfig
+	parentctx    context.Context
 	ctx          context.Context
 	cancel       context.CancelFunc
 	logger       *logrus.Logger
@@ -61,6 +62,7 @@ func NewWSMuxServer(parentCtx context.Context, config *WsMuxConfig, logger *logr
 	// Initialize the TcpTransport struct
 	server := &WsMuxTransport{
 		config:       config,
+		parentctx:    parentCtx,
 		ctx:          ctx,
 		cancel:       cancel,
 		logger:       logger,
@@ -88,7 +90,7 @@ func (s *WsMuxTransport) Restart() {
 
 	time.Sleep(2 * time.Second)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(s.parentctx)
 	s.ctx = ctx
 	s.cancel = cancel
 

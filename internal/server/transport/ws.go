@@ -20,6 +20,7 @@ import (
 
 type WsTransport struct {
 	config            *WsConfig
+	parentctx         context.Context
 	ctx               context.Context
 	cancel            context.CancelFunc
 	logger            *logrus.Logger
@@ -66,6 +67,7 @@ func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 	// Initialize the TcpTransport struct
 	server := &WsTransport{
 		config:            config,
+		parentctx:         parentCtx,
 		ctx:               ctx,
 		cancel:            cancel,
 		logger:            logger,
@@ -95,7 +97,7 @@ func (s *WsTransport) Restart() {
 
 	time.Sleep(2 * time.Second)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(s.parentctx)
 	s.ctx = ctx
 	s.cancel = cancel
 

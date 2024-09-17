@@ -46,8 +46,8 @@ func NewTCPClient(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 	// Initialize the TcpTransport struct
 	client := &TcpTransport{
 		config:         config,
-		ctx:            ctx,
 		parentctx:      parentCtx,
+		ctx:            ctx,
 		cancel:         cancel,
 		logger:         logger,
 		controlChannel: nil,              // will be set when a control connection is established
