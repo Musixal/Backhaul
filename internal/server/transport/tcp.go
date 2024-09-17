@@ -61,7 +61,7 @@ func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		tunnelChannel:     make(chan net.Conn, config.ChannelSize),
 		getNewConnChan:    make(chan struct{}, config.ChannelSize),
 		controlChannel:    nil,                                           // will be set when a control connection is established
-		timeout:           3 * time.Second,                               // Default timeout for waiting for a tunnel connection
+		timeout:           5 * time.Second,                               // Default timeout for waiting for a tunnel connection
 		heartbeatDuration: time.Duration(config.Heartbeat) * time.Second, // Heartbeat duration
 		heartbeatSig:      "0",                                           // Default heartbeat signal
 		chanSignal:        "1",                                           // Default channel signal
@@ -498,32 +498,12 @@ func (s *TcpTransport) handleTCPSession(remotePort int, acceptChan chan net.Conn
 					return
 
 				case <-s.ctx.Done():
-					for {
-						select {
-						case conn := <-acceptChan:
-							if conn != nil {
-								conn.Close()
-								s.logger.Trace("existing local connections have been closed.")
-							}
-						default:
-							return
-						}
-					}
+					return
 
 				}
 			}
 		case <-s.ctx.Done():
-			for {
-				select {
-				case conn := <-acceptChan:
-					if conn != nil {
-						conn.Close()
-						s.logger.Trace("existing local connections have been closed.")
-					}
-				default:
-					return
-				}
-			}
+			return
 
 		}
 

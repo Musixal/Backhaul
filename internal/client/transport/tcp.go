@@ -102,7 +102,6 @@ connectLoop:
 	for {
 		select {
 		case <-c.ctx.Done():
-			go c.closeControlChannel("context cancellation")
 			return
 		default:
 			tunnelTCPConn, err := c.tcpDialer(c.config.RemoteAddr, c.config.Nodelay)

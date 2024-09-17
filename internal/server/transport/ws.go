@@ -95,6 +95,9 @@ func (s *WsTransport) Restart() {
 		s.cancel()
 	}
 
+	// Close any open connections in the tunnel channel.
+	go s.cleanupConnections()
+
 	time.Sleep(2 * time.Second)
 
 	ctx, cancel := context.WithCancel(s.parentctx)
@@ -111,6 +114,61 @@ func (s *WsTransport) Restart() {
 	go s.TunnelListener()
 
 }
+
+// cleanupConnections closes all active connections in the tunnel channel.
+func (s *WsTransport) cleanupConnections() {
+	if s.controlChannel != nil {
+		s.logger.Debug("control channel have been closed.")
+		s.controlChannel.Close()
+	}
+	for {
+		select {
+		case conn := <-s.tunnelChannel:
+			if conn.conn != nil {
+				conn.conn.Close()
+				s.logger.Trace("existing tunnel connections have been closed.")
+			}
+		default:
+			return
+		}
+	}
+}
+
+func (s *WsTransport) getClosedSignal() {
+	for {
+		// Channel to receive the message or error
+		resultChan := make(chan struct {
+			message []byte
+			err     error
+		})
+		go func() {
+			_, message, err := s.controlChannel.ReadMessage()
+			resultChan <- struct {
+				message []byte
+				err     error
+			}{message, err}
+		}()
+
+		select {
+		case <-s.ctx.Done():
+			return
+
+		case result := <-resultChan:
+			if result.err != nil {
+				s.logger.Errorf("failed to receive message from tunnel connection: %v", result.err)
+				go s.Restart()
+				return
+			}
+			if string(result.message) == "closed" {
+				s.logger.Info("control channel has been closed by the client")
+				go s.Restart()
+				return
+			}
+		}
+	}
+
+}
+
 func (s *WsTransport) portConfigReader() {
 	// port mapping for listening on each local port
 	for _, portMapping := range s.config.Ports {
@@ -260,6 +318,7 @@ func (s *WsTransport) TunnelListener() {
 				go s.heartbeat()
 				go s.poolChecker()
 				go s.portConfigReader()
+				go s.getClosedSignal()
 
 				s.config.TunnelStatus = "Connected (Websocket)"
 

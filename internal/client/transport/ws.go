@@ -78,6 +78,8 @@ func (c *WsTransport) Restart() {
 		c.cancel()
 	}
 
+	go c.closeControlChannel("restarting client")
+
 	time.Sleep(2 * time.Second)
 
 	ctx, cancel := context.WithCancel(c.parentctx)
@@ -93,6 +95,14 @@ func (c *WsTransport) Restart() {
 
 }
 
+func (c *WsTransport) closeControlChannel(reason string) {
+	if c.controlChannel != nil {
+		_ = c.controlChannel.WriteMessage(websocket.TextMessage, []byte("closed"))
+		c.controlChannel.Close()
+		c.logger.Debugf("control channel closed due to %s", reason)
+	}
+}
+
 func (c *WsTransport) ChannelDialer() {
 	// for  webui
 	if c.config.WebPort > 0 {
@@ -101,6 +111,7 @@ func (c *WsTransport) ChannelDialer() {
 
 	c.config.TunnelStatus = "Disconnected (Websocket)"
 
+connectLoop:
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -121,9 +132,12 @@ func (c *WsTransport) ChannelDialer() {
 
 			go c.channelListener()
 
-			return
+			break connectLoop
 		}
 	}
+
+	<-c.ctx.Done()
+	go c.closeControlChannel("context cancellation")
 }
 
 func (c *WsTransport) channelListener() {
