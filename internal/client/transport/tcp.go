@@ -15,6 +15,7 @@ import (
 
 type TcpTransport struct {
 	config         *TcpConfig
+	parentctx      context.Context
 	ctx            context.Context
 	cancel         context.CancelFunc
 	logger         *logrus.Logger
@@ -46,6 +47,7 @@ func NewTCPClient(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 	client := &TcpTransport{
 		config:         config,
 		ctx:            ctx,
+		parentctx:      parentCtx,
 		cancel:         cancel,
 		logger:         logger,
 		controlChannel: nil,              // will be set when a control connection is established
@@ -70,9 +72,11 @@ func (c *TcpTransport) Restart() {
 		c.cancel()
 	}
 
+	go c.closeControlChannel("restarting client")
+
 	time.Sleep(2 * time.Second)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(c.parentctx)
 	c.ctx = ctx
 	c.cancel = cancel
 
@@ -92,11 +96,13 @@ func (c *TcpTransport) ChannelDialer() {
 	}
 
 	c.config.TunnelStatus = "Disconnected (TCP)"
-	c.logger.Info("trying to establish a new control channel connection")
+	c.logger.Info("attempting to establish a new control channel connection...")
 
+connectLoop:
 	for {
 		select {
 		case <-c.ctx.Done():
+			go c.closeControlChannel("context cancellation")
 			return
 		default:
 			tunnelTCPConn, err := c.tcpDialer(c.config.RemoteAddr, c.config.Nodelay)
@@ -111,14 +117,14 @@ func (c *TcpTransport) ChannelDialer() {
 			if err != nil {
 				c.logger.Errorf("failed to send security token: %v", err)
 				tunnelTCPConn.Close()
-				continue
+				continue connectLoop
 			}
 
 			// Set a read deadline for the token response
 			if err := tunnelTCPConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
 				c.logger.Errorf("failed to set read deadline: %v", err)
 				tunnelTCPConn.Close()
-				continue
+				continue connectLoop
 			}
 			// Receive response
 			message, err := utils.ReceiveBinaryString(tunnelTCPConn)
@@ -130,7 +136,7 @@ func (c *TcpTransport) ChannelDialer() {
 				}
 				tunnelTCPConn.Close() // Close connection on error or timeout
 				time.Sleep(c.config.RetryInterval)
-				continue
+				continue connectLoop
 			}
 			// Resetting the deadline (removes any existing deadline)
 			tunnelTCPConn.SetReadDeadline(time.Time{})
@@ -141,15 +147,25 @@ func (c *TcpTransport) ChannelDialer() {
 
 				c.config.TunnelStatus = "Connected (TCP)"
 				go c.channelListener()
-
-				return // break the loop
+				break connectLoop // break the loop
 			} else {
 				c.logger.Errorf("invalid token received. Expected: %s, Received: %s. Retrying...", c.config.Token, message)
 				tunnelTCPConn.Close() // Close connection if the token is invalid
 				time.Sleep(c.config.RetryInterval)
-				continue
+				continue connectLoop
 			}
 		}
+	}
+
+	<-c.ctx.Done()
+	go c.closeControlChannel("context cancellation")
+}
+
+func (c *TcpTransport) closeControlChannel(reason string) {
+	if c.controlChannel != nil {
+		_ = utils.SendBinaryString(c.controlChannel, "closed")
+		c.controlChannel.Close()
+		c.logger.Debugf("control channel closed due to %s", reason)
 	}
 }
 
@@ -206,19 +222,55 @@ func (c *TcpTransport) tunnelDialer() {
 	}
 }
 
+// func (c *TcpTransport) handleTCPSession(tcpsession net.Conn) {
+// 	select {
+// 	case <-c.ctx.Done():
+// 		return
+// 	default:
+// 		port, err := utils.ReceiveBinaryInt(tcpsession)
+// 		if err != nil {
+// 			c.logger.Errorf("failed to receive port from tunnel connection %s: %v", tcpsession.RemoteAddr().String(), err)
+// 			tcpsession.Close()
+// 			return
+// 		}
+// 		go c.localDialer(tcpsession, port)
+
+// 	}
+// }
+
 func (c *TcpTransport) handleTCPSession(tcpsession net.Conn) {
+	// Channel to receive the port or error
+	resultChan := make(chan struct {
+		port uint16
+		err  error
+	})
+
+	// Start goroutine to receive the binary int
+	go func() {
+		port, err := utils.ReceiveBinaryInt(tcpsession)
+		resultChan <- struct {
+			port uint16
+			err  error
+		}{port, err}
+		close(resultChan)
+	}()
+
 	select {
 	case <-c.ctx.Done():
+		// Context canceled, close the session
+		tcpsession.Close()
+		c.logger.Trace("session closed due to context cancellation")
 		return
-	default:
-		port, err := utils.ReceiveBinaryInt(tcpsession)
-		if err != nil {
-			c.logger.Errorf("failed to receive port from tunnel connection %s: %v", tcpsession.RemoteAddr().String(), err)
+	case result := <-resultChan:
+		// Check if there was an error during the receive operation
+		if result.err != nil {
+			c.logger.Errorf("failed to receive port from tunnel connection %s: %v", tcpsession.RemoteAddr().String(), result.err)
 			tcpsession.Close()
 			return
 		}
-		go c.localDialer(tcpsession, port)
 
+		// Port received successfully, handle the connection
+		go c.localDialer(tcpsession, result.port)
 	}
 }
 

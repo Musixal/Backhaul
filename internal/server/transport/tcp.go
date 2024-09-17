@@ -17,6 +17,7 @@ import (
 
 type TcpTransport struct {
 	config            *TcpConfig
+	parentctx         context.Context
 	ctx               context.Context
 	cancel            context.CancelFunc
 	logger            *logrus.Logger
@@ -53,6 +54,7 @@ func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 	// Initialize the TcpTransport struct
 	server := &TcpTransport{
 		config:            config,
+		parentctx:         parentCtx,
 		ctx:               ctx,
 		cancel:            cancel,
 		logger:            logger,
@@ -81,21 +83,43 @@ func (s *TcpTransport) Restart() {
 		s.cancel()
 	}
 
+	// Close any open connections in the tunnel channel.
+	go s.cleanupConnections()
+
 	time.Sleep(2 * time.Second)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(s.parentctx)
 	s.ctx = ctx
 	s.cancel = cancel
 
 	// Re-initialize variables
 	s.tunnelChannel = make(chan net.Conn, s.config.ChannelSize)
 	s.getNewConnChan = make(chan struct{}, s.config.ChannelSize)
-	s.controlChannel = nil
 	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.config.Sniffer, &s.config.TunnelStatus, s.logger)
 	s.config.TunnelStatus = ""
+	s.controlChannel = nil
 
 	go s.TunnelListener()
 
+}
+
+// cleanupConnections closes all active connections in the tunnel channel.
+func (s *TcpTransport) cleanupConnections() {
+	if s.controlChannel != nil {
+		s.logger.Debug("control channel have been closed.")
+		s.controlChannel.Close()
+	}
+	for {
+		select {
+		case conn := <-s.tunnelChannel:
+			if conn != nil {
+				conn.Close()
+				s.logger.Trace("existing tunnel connections have been closed.")
+			}
+		default:
+			return
+		}
+	}
 }
 
 func (s *TcpTransport) portConfigReader() {
@@ -172,7 +196,7 @@ func (s *TcpTransport) TunnelListener() {
 
 				// Drop all suspicious packets from other address rather than server
 				if s.controlChannel != nil && s.controlChannel.RemoteAddr().(*net.TCPAddr).IP.String() != tcpConn.RemoteAddr().(*net.TCPAddr).IP.String() {
-					s.logger.Warnf("suspicious packet from %v. expected address: %v. discarding packet...", tcpConn.RemoteAddr().(*net.TCPAddr).IP.String(), s.controlChannel.RemoteAddr().(*net.TCPAddr).IP.String())
+					s.logger.Debugf("suspicious packet from %v. expected address: %v. discarding packet...", tcpConn.RemoteAddr().(*net.TCPAddr).IP.String(), s.controlChannel.RemoteAddr().(*net.TCPAddr).IP.String())
 					tcpConn.Close()
 					continue
 				}
@@ -260,6 +284,7 @@ func (s *TcpTransport) channelListener() {
 			go s.heartbeat()
 			go s.poolChecker()
 			go s.portConfigReader()
+			go s.getClosedSignal()
 
 			s.config.TunnelStatus = "Connected (TCP)"
 
@@ -323,6 +348,40 @@ func (s *TcpTransport) poolChecker() {
 	}
 }
 
+func (s *TcpTransport) getClosedSignal() {
+	for {
+		// Channel to receive the message or error
+		resultChan := make(chan struct {
+			message string
+			err     error
+		})
+		go func() {
+			message, err := utils.ReceiveBinaryString(s.controlChannel)
+			resultChan <- struct {
+				message string
+				err     error
+			}{message, err}
+		}()
+
+		select {
+		case <-s.ctx.Done():
+			return
+
+		case result := <-resultChan:
+			if result.err != nil {
+				s.logger.Errorf("failed to receive message from tunnel connection: %v", result.err)
+				go s.Restart()
+				return
+			}
+			if result.message == "closed" {
+				s.logger.Info("control channel has been closed by the client")
+				go s.Restart()
+				return
+			}
+		}
+	}
+
+}
 func (s *TcpTransport) getNewConnection() {
 	for {
 		select {
@@ -439,11 +498,33 @@ func (s *TcpTransport) handleTCPSession(remotePort int, acceptChan chan net.Conn
 					return
 
 				case <-s.ctx.Done():
-					return
+					for {
+						select {
+						case conn := <-acceptChan:
+							if conn != nil {
+								conn.Close()
+								s.logger.Trace("existing local connections have been closed.")
+							}
+						default:
+							return
+						}
+					}
+
 				}
 			}
 		case <-s.ctx.Done():
-			return
+			for {
+				select {
+				case conn := <-acceptChan:
+					if conn != nil {
+						conn.Close()
+						s.logger.Trace("existing local connections have been closed.")
+					}
+				default:
+					return
+				}
+			}
+
 		}
 
 	}
