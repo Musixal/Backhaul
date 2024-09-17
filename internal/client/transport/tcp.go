@@ -222,55 +222,19 @@ func (c *TcpTransport) tunnelDialer() {
 	}
 }
 
-// func (c *TcpTransport) handleTCPSession(tcpsession net.Conn) {
-// 	select {
-// 	case <-c.ctx.Done():
-// 		return
-// 	default:
-// 		port, err := utils.ReceiveBinaryInt(tcpsession)
-// 		if err != nil {
-// 			c.logger.Errorf("failed to receive port from tunnel connection %s: %v", tcpsession.RemoteAddr().String(), err)
-// 			tcpsession.Close()
-// 			return
-// 		}
-// 		go c.localDialer(tcpsession, port)
-
-// 	}
-// }
-
 func (c *TcpTransport) handleTCPSession(tcpsession net.Conn) {
-	// Channel to receive the port or error
-	resultChan := make(chan struct {
-		port uint16
-		err  error
-	})
-
-	// Start goroutine to receive the binary int
-	go func() {
-		port, err := utils.ReceiveBinaryInt(tcpsession)
-		resultChan <- struct {
-			port uint16
-			err  error
-		}{port, err}
-		close(resultChan)
-	}()
-
 	select {
 	case <-c.ctx.Done():
-		// Context canceled, close the session
-		tcpsession.Close()
-		c.logger.Trace("session closed due to context cancellation")
 		return
-	case result := <-resultChan:
-		// Check if there was an error during the receive operation
-		if result.err != nil {
-			c.logger.Errorf("failed to receive port from tunnel connection %s: %v", tcpsession.RemoteAddr().String(), result.err)
+	default:
+		port, err := utils.ReceiveBinaryInt(tcpsession)
+		if err != nil {
+			c.logger.Errorf("failed to receive port from tunnel connection %s: %v", tcpsession.RemoteAddr().String(), err)
 			tcpsession.Close()
 			return
 		}
+		go c.localDialer(tcpsession, port)
 
-		// Port received successfully, handle the connection
-		go c.localDialer(tcpsession, result.port)
 	}
 }
 
