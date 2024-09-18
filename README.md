@@ -11,7 +11,6 @@ Welcome to the **`Backhaul`** project! This project provides a high-performance 
 3. [Usage](#usage)
    - [Configuration Options](#configuration-options)
    - [Detailed Configuration](#detailed-configuration)
-      - [Transport Protocols](#transport-protocols)
       - [TCP Configuration](#tcp-configuration)
       - [TCP Multiplexing Configuration](#tcp-multiplexing-configuration)
       - [WebSocket Configuration](#websocket-configuration)
@@ -67,24 +66,24 @@ To start using the solution, you'll need to configure both server and client com
     ```toml
     [server]# Local, IRAN
     bind_addr = "0.0.0.0:3080"    # Address and port for the server to listen on (mandatory).
-    transport = "tcp"             # Protocol to use ("tcp", "tcpmux", or "ws", mandatory).
+    transport = "tcp"             # Protocol to use ("tcp", "tcpmux", "ws", "wss", "wsmux", "wssmux". mandatory).
     token = "your_token"          # Authentication token for secure communication (optional).
     keepalive_period = 20         # Interval in seconds to send keep-alive packets.(optional, default: 20 seconds)
     nodelay = false               # Enable TCP_NODELAY (optional, default: false).
-    channel_size = 2048           # Tunnel channel size. Excess connections are discarded. Only for tcp and ws mode (optional, default: 2048).
-    connection_pool = 8           # Number of pre-established connections. Only for tcp and ws mode (optional, default: 8).
+    channel_size = 2048           # Tunnel channel size. Excess connections are discarded. Only for tcp and ws/wss mode (optional, default: 2048).
+    connection_pool = 8           # Number of pre-established connections. Only for tcp and ws/wss mode (optional, default: 8).
     log_level = "info"            # Log level ("panic", "fatal", "error", "warn", "info", "debug", "trace", optional, default: "info").
-    heartbeat = 20                # In seconds. Ping interval for tunnel stability. Min: 1s. Not used in TcpMux. (Optional, default: 20s)
-    mux_session = 1               # Number of mux sessions for tcpmux. (optional, default: 1).
-    mux_version = 1               # TCPMux protocol version (1 or 2). Version 2 may have extra features. (optional)
+    heartbeat = 20                # In seconds. Ping interval for tunnel stability. Min: 1s. Only for tcp and ws/wss mode. (Optional, default: 20s)
+    mux_session = 1               # Number of mux sessions for tcpmux/wsmux/wssmux. (optional, default: 1).
+    mux_version = 1               # SMUX protocol version (1 or 2). Version 2 may have extra features. (optional)
     mux_framesize = 32768         # 32 KB. The maximum size of a frame that can be sent over a connection. (optional)
     mux_recievebuffer = 4194304   # 4 MB. The maximum buffer size for incoming data per connection. (optional)
     mux_streambuffer = 65536      # 256 KB. The maximum buffer size per individual stream within a connection. (optional)
     sniffer = false               # Enable or disable network sniffing for monitoring data. (optional, default false)
     web_port = 2060               # Port number for the web interface or monitoring interface. (optional, default 2060).
-    sniffer_log = "/root/backhaul.json" # Filename used to store network traffic and usage data logs. (optional, default backhaul.json)
-    tls_cert = "/root/server.crt" # Path to the TLS certificate file for wss. (mandatory).
-    tls_key = "/root/server.key"  # Path to the TLS private key file for wss.(mandatory).
+    sniffer_log ="/root/log.json" # Filename used to store network traffic and usage data logs. (optional, default backhaul.json)
+    tls_cert = "/root/server.crt" # Path to the TLS certificate file for wss/wssmux. (mandatory).
+    tls_key = "/root/server.key"  # Path to the TLS private key file for wss/wssmux. (mandatory).
 
     ports = [ # Local to remote port mapping in this format LocalPort=RemotePort (mandatory).
         "4000=5201", # Bind to all local ip addresses.
@@ -103,20 +102,20 @@ To start using the solution, you'll need to configure both server and client com
    ```toml
    [client]  # Behind NAT, firewall-blocked
    remote_addr = "0.0.0.0:3080"  # Server address and port (mandatory).
-   transport = "tcp"             # Protocol to use ("tcp", "tcpmux", or "ws", mandatory).
+   transport = "tcp"             # Protocol to use ("tcp", "tcpmux", "ws", "wss", "wsmux", "wssmux". mandatory).
    token = "your_token"          # Authentication token for secure communication (optional).
    keepalive_period = 20         # Interval in seconds to send keep-alive packets. (optional, default: 20 seconds)
    nodelay = false               # Use TCP_NODELAY (optional, default: false).
    retry_interval = 1            # Retry interval in seconds (optional, default: 1).
    log_level = "info"            # Log level ("panic", "fatal", "error", "warn", "info", "debug", "trace", optional, default: "info").
-   mux_session = 1               # Number of mux sessions for tcpmux. (optional, default: 1).
-   mux_version = 1               # TCPMux protocol version (1 or 2). Version 2 may have extra features. (optional)
+   mux_session = 1               # Number of mux sessions for tcpmux/wsmux/wssmux. (optional, default: 1).
+   mux_version = 1               # SMUX protocol version (1 or 2). Version 2 may have extra features. (optional)
    mux_framesize = 32768         # 32 KB. The maximum size of a frame that can be sent over a connection. (optional)
    mux_recievebuffer = 4194304   # 4 MB. The maximum buffer size for incoming data per connection. (optional)
    mux_streambuffer = 65536      # 256 KB. The maximum buffer size per individual stream within a connection. (optional)
    sniffer = false               # Enable or disable network sniffing for monitoring data. (optional, default false)
    web_port = 2060               # Port number for the web interface or monitoring interface. (optional, default 2060).
-   sniffer_log = "/root/backhaul.json" # Filename used to store network traffic and usage data logs. (optional, default backhaul.json)
+   sniffer_log ="/root/log.json" # Filename used to store network traffic and usage data logs. (optional, default backhaul.json)
 
    forwarder = [ # Forward incoming connection to another address. optional.
       "4000=IP:PORT",
@@ -131,14 +130,6 @@ To start using the solution, you'll need to configure both server and client com
    ```
 
 ### Detailed Configuration
-#### Transport Protocols
-
-You can configure the `server` and `client` to use different transport protocols based on your requirements:
-
-   * **TCP (`tcp`)**: Basic TCP transport, suitable for most scenarios.
-   * **TCP Multiplexing (`tcpmux`)**: Provides multiplexing capabilities to handle multiple sessions over a single connection.
-   * **WebSocket (`ws`)**: Ideal for traversing HTTP-based firewalls and proxies.
-
 #### TCP Configuration
 * **Server**:
 
@@ -146,10 +137,16 @@ You can configure the `server` and `client` to use different transport protocols
    [server]
    bind_addr = "0.0.0.0:3080"
    transport = "tcp"
-   token = "your_token" 
+   token = "your_token"
+   keepalive_period = 20  
+   nodelay = true 
+   heartbeat = 20 
    channel_size = 2048
    connection_pool = 8
-   nodelay = true 
+   sniffer = false 
+   web_port = 2060
+   sniffer_log = "/root/backhaul.json"
+   log_level = "info"
    ports = []
    ```
 * **Client**:
@@ -159,7 +156,14 @@ You can configure the `server` and `client` to use different transport protocols
    remote_addr = "0.0.0.0:3080"
    transport = "tcp"
    token = "your_token" 
+   keepalive_period = 20
    nodelay = true 
+   retry_interval = 1
+   sniffer = false
+   web_port = 2060 
+   sniffer_log = "/root/backhaul.json"
+   log_level = "info"
+
    ```
 * **Details**:
 
@@ -181,8 +185,17 @@ You can configure the `server` and `client` to use different transport protocols
    bind_addr = "0.0.0.0:3080"
    transport = "tcpmux"
    token = "your_token" 
-   mux_session = 1
+   keepalive_period = 20
    nodelay = true 
+   mux_session = 1
+   mux_version = 1
+   mux_framesize = 32768 
+   mux_recievebuffer = 4194304
+   mux_streambuffer = 65536 
+   sniffer = false 
+   web_port = 2060
+   sniffer_log = "/root/backhaul.json"
+   log_level = "info"
    ports = []
    ```
 * **Client**:
@@ -192,8 +205,18 @@ You can configure the `server` and `client` to use different transport protocols
    remote_addr = "0.0.0.0:3080"
    transport = "tcpmux"
    token = "your_token" 
-   mux_session = 1
+   keepalive_period = 20
+   retry_interval = 1
    nodelay = true 
+   mux_session = 1
+   mux_version = 1
+   mux_framesize = 32768 
+   mux_recievebuffer = 4194304
+   mux_streambuffer = 65536 
+   sniffer = false 
+   web_port = 2060
+   sniffer_log = "/root/backhaul.json"
+   log_level = "info"
    ```
 * **Details**:
 
@@ -212,7 +235,13 @@ You can configure the `server` and `client` to use different transport protocols
    token = "your_token" 
    channel_size = 2048
    connection_pool = 8
+   keepalive_period = 20 
+   heartbeat = 20
    nodelay = true 
+   sniffer = false 
+   web_port = 2060
+   sniffer_log = "/root/backhaul.json"
+   log_level = "info"
    ports = []
    ```
 
@@ -223,7 +252,13 @@ You can configure the `server` and `client` to use different transport protocols
    remote_addr = "0.0.0.0:8080"
    transport = "ws"
    token = "your_token" 
+   keepalive_period = 20 
+   retry_interval = 1
    nodelay = true 
+   sniffer = false 
+   web_port = 2060
+   sniffer_log = "/root/backhaul.json"
+   log_level = "info"
    ```
 
 * **Details**:
@@ -240,10 +275,14 @@ You can configure the `server` and `client` to use different transport protocols
    token = "your_token" 
    channel_size = 2048
    connection_pool = 8
+   keepalive_period = 20 
    nodelay = true 
    tls_cert = "/root/server.crt"      
    tls_key = "/root/server.key"
-
+   sniffer = false 
+   web_port = 2060
+   sniffer_log = "/root/backhaul.json"
+   log_level = "info"
    ports = []
    ```
 
@@ -254,7 +293,13 @@ You can configure the `server` and `client` to use different transport protocols
    remote_addr = "0.0.0.0:8443"
    transport = "wss"
    token = "your_token" 
+   keepalive_period = 20
+   retry_interval = 1  
    nodelay = true 
+   sniffer = false 
+   web_port = 2060
+   sniffer_log = "/root/backhaul.json"
+   log_level = "info"
    ```
 
 * **Details**:
@@ -270,8 +315,17 @@ You can configure the `server` and `client` to use different transport protocols
    bind_addr = "0.0.0.0:3080"
    transport = "wsmux"
    token = "your_token" 
+   keepalive_period = 20
    mux_session = 1
+   mux_version = 1
+   mux_framesize = 32768 
+   mux_recievebuffer = 4194304
+   mux_streambuffer = 65536 
    nodelay = true 
+   sniffer = false 
+   web_port = 2060
+   sniffer_log = "/root/backhaul.json"
+   log_level = "info"
    ports = []
    ```
 * **Client**:
@@ -281,8 +335,18 @@ You can configure the `server` and `client` to use different transport protocols
    remote_addr = "0.0.0.0:3080"
    transport = "wsmux"
    token = "your_token" 
+   keepalive_period = 20
+   nodelay = true
+   retry_interval = 1
    mux_session = 1
-   nodelay = true 
+   mux_version = 1
+   mux_framesize = 32768 
+   mux_recievebuffer = 4194304
+   mux_streambuffer = 65536 
+   sniffer = false 
+   web_port = 2060
+   sniffer_log = "/root/backhaul.json"
+   log_level = "info"
    ```
 
 #### WSS Multiplexing Configuration
@@ -293,10 +357,19 @@ You can configure the `server` and `client` to use different transport protocols
    bind_addr = "0.0.0.0:443"
    transport = "wssmux"
    token = "your_token" 
-   mux_session = 1
+   keepalive_period = 20
    nodelay = true 
+   mux_session = 1
+   mux_version = 1
+   mux_framesize = 32768 
+   mux_recievebuffer = 4194304
+   mux_streambuffer = 65536 
    tls_cert = "/root/server.crt"      
    tls_key = "/root/server.key"
+   sniffer = false 
+   web_port = 2060
+   sniffer_log = "/root/backhaul.json"
+   log_level = "info"
    ports = []
    ```
 * **Client**:
@@ -306,8 +379,18 @@ You can configure the `server` and `client` to use different transport protocols
    remote_addr = "0.0.0.0:443"
    transport = "wssmux"
    token = "your_token" 
+   keepalive_period = 20
+   nodelay = true
+   retry_interval = 1
    mux_session = 1
-   nodelay = true 
+   mux_version = 1
+   mux_framesize = 32768 
+   mux_recievebuffer = 4194304
+   mux_streambuffer = 65536  
+   sniffer = false 
+   web_port = 2060
+   sniffer_log = "/root/backhaul.json"
+   log_level = "info"
    ```
 
 
