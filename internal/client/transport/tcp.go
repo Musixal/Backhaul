@@ -50,10 +50,10 @@ func NewTCPClient(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		ctx:            ctx,
 		cancel:         cancel,
 		logger:         logger,
-		controlChannel: nil,              // will be set when a control connection is established
-		timeout:        10 * time.Second, // Default timeout for tcpDialer
-		heartbeatSig:   "0",              // Default heartbeat signal
-		chanSignal:     "1",              // Default channel signal
+		controlChannel: nil,             // will be set when a control connection is established
+		timeout:        3 * time.Second, // Default timeout for tcpDialer
+		heartbeatSig:   "0",             // Default heartbeat signal
+		chanSignal:     "1",             // Default channel signal
 		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
@@ -169,8 +169,8 @@ func (c *TcpTransport) closeControlChannel(reason string) {
 }
 
 func (c *TcpTransport) channelListener() {
-	msgChan := make(chan string)
-	errChan := make(chan error)
+	msgChan := make(chan string, 100)
+	errChan := make(chan error, 100)
 
 	// Goroutine to handle the blocking ReceiveBinaryString
 	go func() {

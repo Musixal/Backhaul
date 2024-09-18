@@ -56,10 +56,10 @@ func NewWSClient(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 		ctx:            ctx,
 		cancel:         cancel,
 		logger:         logger,
-		controlChannel: nil,              // will be set when a control connection is established
-		timeout:        30 * time.Second, // Default timeout
-		heartbeatSig:   "0",              // Default heartbeat signal
-		chanSignal:     "1",              // Default channel signal
+		controlChannel: nil,             // will be set when a control connection is established
+		timeout:        3 * time.Second, // Default timeout
+		heartbeatSig:   "0",             // Default heartbeat signal
+		chanSignal:     "1",             // Default channel signal
 		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
@@ -77,8 +77,6 @@ func (c *WsTransport) Restart() {
 	if c.cancel != nil {
 		c.cancel()
 	}
-
-	go c.closeControlChannel("restarting client")
 
 	time.Sleep(2 * time.Second)
 
@@ -99,7 +97,7 @@ func (c *WsTransport) closeControlChannel(reason string) {
 	if c.controlChannel != nil {
 		_ = c.controlChannel.WriteMessage(websocket.TextMessage, []byte("closed"))
 		c.controlChannel.Close()
-		c.logger.Debugf("control channel closed due to %s", reason)
+		c.logger.Infof("control channel closed due to %s", reason)
 	}
 }
 

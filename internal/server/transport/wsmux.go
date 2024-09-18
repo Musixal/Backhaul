@@ -304,7 +304,7 @@ func (s *WsMuxTransport) localListener(localAddr string, remotePort int) {
 					if err := tcpConn.SetNoDelay(s.config.Nodelay); err != nil {
 						s.logger.Warnf("failed to set TCP_NODELAY for %s: %v", tcpConn.RemoteAddr().String(), err)
 					} else {
-						s.logger.Tracef("TCP_NODELAY enabled for %s", tcpConn.RemoteAddr().String())
+						s.logger.Tracef("TCP_NODELAY disabled for %s", tcpConn.RemoteAddr().String())
 					}
 				}
 

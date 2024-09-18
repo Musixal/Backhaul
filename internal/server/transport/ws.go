@@ -74,7 +74,7 @@ func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 		tunnelChannel:     make(chan TunnelChannel, config.ChannelSize),
 		getNewConnChan:    make(chan struct{}, config.ChannelSize),
 		controlChannel:    nil,                                           // will be set when a control connection is established
-		timeout:           2 * time.Second,                               // Default timeout
+		timeout:           1 * time.Second,                               // Default timeout
 		heartbeatDuration: time.Duration(config.Heartbeat) * time.Second, // Default heartbeat duration
 		heartbeatSig:      "0",                                           // Default heartbeat signal
 		chanSignal:        "1",                                           // Default channel signal
@@ -420,7 +420,7 @@ func (s *WsTransport) acceptLocConn(listener net.Listener, acceptChan chan net.C
 				if err := tcpConn.SetNoDelay(s.config.Nodelay); err != nil {
 					s.logger.Warnf("failed to set TCP_NODELAY for %s: %v", tcpConn.RemoteAddr().String(), err)
 				} else {
-					s.logger.Tracef("TCP_NODELAY enabled for %s", tcpConn.RemoteAddr().String())
+					s.logger.Tracef("TCP_NODELAY disabled for %s", tcpConn.RemoteAddr().String())
 				}
 			}
 			tcpConn.SetKeepAlive(true)
@@ -468,10 +468,9 @@ func (s *WsTransport) handleWSSession(remotePort int, acceptChan chan net.Conn) 
 					break innerloop
 
 				case <-time.After(s.timeout):
-					s.logger.Warn("tunnel connection unavailable, attempting to restart server...")
-					incomingConn.Close()
-					go s.Restart()
-					return
+					s.logger.Warn("tunnel connection unavailable, request a new connection")
+					s.getNewConnChan <- struct{}{}
+					continue innerloop
 
 				case <-s.ctx.Done():
 					return
