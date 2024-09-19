@@ -57,6 +57,7 @@ func (c *Client) Start() {
 			Sniffer:       c.config.Sniffer,
 			WebPort:       c.config.WebPort,
 			SnifferLog:    c.config.SnifferLog,
+			DialTimeOut:   time.Duration(c.config.DialTimeout) * time.Second,
 		}
 		tcpClient := transport.NewTCPClient(c.ctx, tcpConfig, c.logger)
 		go tcpClient.ChannelDialer()
@@ -77,6 +78,7 @@ func (c *Client) Start() {
 			Sniffer:          c.config.Sniffer,
 			WebPort:          c.config.WebPort,
 			SnifferLog:       c.config.SnifferLog,
+			DialTimeOut:      time.Duration(c.config.DialTimeout) * time.Second,
 		}
 		tcpMuxClient := transport.NewMuxClient(c.ctx, tcpMuxConfig, c.logger)
 		go tcpMuxClient.MuxDialer()
@@ -93,6 +95,7 @@ func (c *Client) Start() {
 			WebPort:       c.config.WebPort,
 			SnifferLog:    c.config.SnifferLog,
 			Mode:          c.config.Transport,
+			DialTimeOut:   time.Duration(c.config.DialTimeout) * time.Second,
 		}
 		WsClient := transport.NewWSClient(c.ctx, WsConfig, c.logger)
 		go WsClient.ChannelDialer()
@@ -113,6 +116,7 @@ func (c *Client) Start() {
 			WebPort:          c.config.WebPort,
 			SnifferLog:       c.config.SnifferLog,
 			Mode:             c.config.Transport,
+			DialTimeOut:      time.Duration(c.config.DialTimeout) * time.Second,
 		}
 		wsMuxClient := transport.NewWSMuxClient(c.ctx, wsMuxConfig, c.logger)
 		go wsMuxClient.MuxDialer()

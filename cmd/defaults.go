@@ -14,13 +14,14 @@ const ( // Default values
 	defaultLogLevel       = "info"
 	defaultMuxSession     = 1
 	defaultKeepAlive      = 20
+	deafultHeartbeat      = 20 // 20 seconds
+	defaultDialTimeout    = 5  // 5 seconds
 	// related to smux
 	defaultMuxVersion       = 1
 	defaultMaxFrameSize     = 32768   // 32KB
 	defaultMaxReceiveBuffer = 4194304 // 4MB
 	defaultMaxStreamBuffer  = 65536   // 256KB
 	defaultSnifferLog       = "backhaul.json"
-	deafultHeartbeat        = 20 // 20 seconds
 )
 
 func applyDefaults(cfg *config.Config) {
@@ -118,4 +119,8 @@ func applyDefaults(cfg *config.Config) {
 		cfg.Server.Heartbeat = deafultHeartbeat
 	}
 
+	// Timeout
+	if cfg.Client.DialTimeout < 1 { // Minimum accepted value is 1 second
+		cfg.Client.DialTimeout = defaultDialTimeout
+	}
 }

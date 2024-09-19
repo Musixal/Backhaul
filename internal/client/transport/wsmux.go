@@ -26,7 +26,6 @@ type WsMuxTransport struct {
 	logger       *logrus.Logger
 	smuxSession  []*smux.Session
 	restartMutex sync.Mutex
-	timeout      time.Duration
 	usageMonitor *web.Usage
 }
 
@@ -35,6 +34,7 @@ type WsMuxConfig struct {
 	Nodelay          bool
 	KeepAlive        time.Duration
 	RetryInterval    time.Duration
+	DialTimeOut      time.Duration
 	Token            string
 	MuxSession       int
 	Forwarder        map[int]string
@@ -61,7 +61,6 @@ func NewWSMuxClient(parentCtx context.Context, config *WsMuxConfig, logger *logr
 		cancel:       cancel,
 		logger:       logger,
 		smuxSession:  make([]*smux.Session, config.MuxSession),
-		timeout:      10 * time.Second, // Default timeout
 		usageMonitor: web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
@@ -212,8 +211,8 @@ func (c *WsMuxTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPCon
 
 	// options
 	dialer := &net.Dialer{
-		Timeout:   c.timeout,          // Set the connection timeout
-		KeepAlive: c.config.KeepAlive, // Set the keep-alive duration
+		Timeout:   c.config.DialTimeOut, // Set the connection timeout
+		KeepAlive: c.config.KeepAlive,   // Set the keep-alive duration
 	}
 
 	// Dial the TCP connection with a timeout
@@ -255,9 +254,9 @@ func (c *WsMuxTransport) wsDialer(addr string, path string) (*websocket.Conn, er
 	if c.config.Mode == config.WSMUX {
 		wsURL = fmt.Sprintf("ws://%s%s", addr, path)
 		dialer = websocket.Dialer{
-			HandshakeTimeout: c.timeout, // Set handshake timeout
+			HandshakeTimeout: c.config.DialTimeOut, // Set handshake timeout
 			NetDial: func(_, addr string) (net.Conn, error) {
-				conn, err := net.DialTimeout("tcp", addr, c.timeout)
+				conn, err := net.DialTimeout("tcp", addr, c.config.DialTimeOut)
 				if err != nil {
 					return nil, err
 				}
@@ -270,10 +269,10 @@ func (c *WsMuxTransport) wsDialer(addr string, path string) (*websocket.Conn, er
 	} else {
 		wsURL = fmt.Sprintf("wss://%s%s", addr, path)
 		dialer = websocket.Dialer{
-			TLSClientConfig:  tlsConfig, // Pass the insecure TLS config here
-			HandshakeTimeout: c.timeout, // Set handshake timeout
+			TLSClientConfig:  tlsConfig,            // Pass the insecure TLS config here
+			HandshakeTimeout: c.config.DialTimeOut, // Set handshake timeout
 			NetDial: func(_, addr string) (net.Conn, error) {
-				conn, err := net.DialTimeout("tcp", addr, c.timeout)
+				conn, err := net.DialTimeout("tcp", addr, c.config.DialTimeOut)
 				if err != nil {
 					return nil, err
 				}

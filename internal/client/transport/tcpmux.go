@@ -22,7 +22,6 @@ type TcpMuxTransport struct {
 	logger       *logrus.Logger
 	smuxSession  []*smux.Session
 	restartMutex sync.Mutex
-	timeout      time.Duration
 	usageMonitor *web.Usage
 }
 
@@ -31,6 +30,7 @@ type TcpMuxConfig struct {
 	Nodelay          bool
 	KeepAlive        time.Duration
 	RetryInterval    time.Duration
+	DialTimeOut      time.Duration
 	Token            string
 	MuxSession       int
 	Forwarder        map[int]string
@@ -56,7 +56,6 @@ func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logru
 		cancel:       cancel,
 		logger:       logger,
 		smuxSession:  make([]*smux.Session, config.MuxSession),
-		timeout:      10 * time.Second, // Default timeout
 		usageMonitor: web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
@@ -190,8 +189,8 @@ func (c *TcpMuxTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPCo
 
 	// options
 	dialer := &net.Dialer{
-		Timeout:   c.timeout,          // Set the connection timeout
-		KeepAlive: c.config.KeepAlive, // Set the keep-alive duration
+		Timeout:   c.config.DialTimeOut, // Set the connection timeout
+		KeepAlive: c.config.KeepAlive,   // Set the keep-alive duration
 	}
 
 	// Dial the TCP connection with a timeout

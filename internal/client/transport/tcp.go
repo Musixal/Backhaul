@@ -20,7 +20,6 @@ type TcpTransport struct {
 	cancel         context.CancelFunc
 	logger         *logrus.Logger
 	controlChannel net.Conn
-	timeout        time.Duration
 	restartMutex   sync.Mutex
 	heartbeatSig   string
 	chanSignal     string
@@ -31,6 +30,7 @@ type TcpConfig struct {
 	Nodelay       bool
 	KeepAlive     time.Duration
 	RetryInterval time.Duration
+	DialTimeOut   time.Duration
 	Token         string
 	Forwarder     map[int]string
 	Sniffer       bool
@@ -50,10 +50,9 @@ func NewTCPClient(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		ctx:            ctx,
 		cancel:         cancel,
 		logger:         logger,
-		controlChannel: nil,             // will be set when a control connection is established
-		timeout:        3 * time.Second, // Default timeout for tcpDialer
-		heartbeatSig:   "0",             // Default heartbeat signal
-		chanSignal:     "1",             // Default channel signal
+		controlChannel: nil, // will be set when a control connection is established
+		heartbeatSig:   "0", // Default heartbeat signal
+		chanSignal:     "1", // Default channel signal
 		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
@@ -279,8 +278,8 @@ func (c *TcpTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPConn,
 
 	// options
 	dialer := &net.Dialer{
-		Timeout:   c.timeout,          // Set the connection timeout
-		KeepAlive: c.config.KeepAlive, // Set the keep-alive duration
+		Timeout:   c.config.DialTimeOut, // Set the connection timeout
+		KeepAlive: c.config.KeepAlive,   // Set the keep-alive duration
 	}
 
 	// Dial the TCP connection with a timeout

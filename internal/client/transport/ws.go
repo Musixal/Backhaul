@@ -25,7 +25,6 @@ type WsTransport struct {
 	cancel         context.CancelFunc
 	logger         *logrus.Logger
 	controlChannel *websocket.Conn
-	timeout        time.Duration
 	restartMutex   sync.Mutex
 	heartbeatSig   string
 	chanSignal     string
@@ -36,6 +35,7 @@ type WsConfig struct {
 	Nodelay       bool
 	KeepAlive     time.Duration
 	RetryInterval time.Duration
+	DialTimeOut   time.Duration
 	Token         string
 	Forwarder     map[int]string
 	Sniffer       bool
@@ -56,10 +56,9 @@ func NewWSClient(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 		ctx:            ctx,
 		cancel:         cancel,
 		logger:         logger,
-		controlChannel: nil,             // will be set when a control connection is established
-		timeout:        3 * time.Second, // Default timeout
-		heartbeatSig:   "0",             // Default heartbeat signal
-		chanSignal:     "1",             // Default channel signal
+		controlChannel: nil, // will be set when a control connection is established
+		heartbeatSig:   "0", // Default heartbeat signal
+		chanSignal:     "1", // Default channel signal
 		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
@@ -248,9 +247,9 @@ func (c *WsTransport) wsDialer(addr string, path string) (*websocket.Conn, error
 	if c.config.Mode == config.WS {
 		wsURL = fmt.Sprintf("ws://%s%s", addr, path)
 		dialer = websocket.Dialer{
-			HandshakeTimeout: c.timeout, // Set handshake timeout
+			HandshakeTimeout: c.config.DialTimeOut, // Set handshake timeout
 			NetDial: func(_, addr string) (net.Conn, error) {
-				conn, err := net.DialTimeout("tcp", addr, c.timeout)
+				conn, err := net.DialTimeout("tcp", addr, c.config.DialTimeOut)
 				if err != nil {
 					return nil, err
 				}
@@ -263,10 +262,10 @@ func (c *WsTransport) wsDialer(addr string, path string) (*websocket.Conn, error
 	} else {
 		wsURL = fmt.Sprintf("wss://%s%s", addr, path)
 		dialer = websocket.Dialer{
-			TLSClientConfig:  tlsConfig, // Pass the insecure TLS config here
-			HandshakeTimeout: c.timeout, // Set handshake timeout
+			TLSClientConfig:  tlsConfig,            // Pass the insecure TLS config here
+			HandshakeTimeout: c.config.DialTimeOut, // Set handshake timeout
 			NetDial: func(_, addr string) (net.Conn, error) {
-				conn, err := net.DialTimeout("tcp", addr, c.timeout)
+				conn, err := net.DialTimeout("tcp", addr, c.config.DialTimeOut)
 				if err != nil {
 					return nil, err
 				}
@@ -296,8 +295,8 @@ func (c *WsTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPConn, 
 
 	// options
 	dialer := &net.Dialer{
-		Timeout:   c.timeout,          // Set the connection timeout
-		KeepAlive: c.config.KeepAlive, // Set the keep-alive duration
+		Timeout:   c.config.DialTimeOut, // Set the connection timeout
+		KeepAlive: c.config.KeepAlive,   // Set the keep-alive duration
 	}
 
 	// Dial the TCP connection with a timeout

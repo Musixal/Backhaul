@@ -72,7 +72,6 @@ To start using the solution, you'll need to configure both server and client com
     nodelay = false               # Enable TCP_NODELAY (optional, default: false).
     channel_size = 2048           # Tunnel channel size. Excess connections are discarded. Only for tcp and ws/wss mode (optional, default: 2048).
     connection_pool = 8           # Number of pre-established connections. Only for tcp and ws/wss mode (optional, default: 8).
-    log_level = "info"            # Log level ("panic", "fatal", "error", "warn", "info", "debug", "trace", optional, default: "info").
     heartbeat = 20                # In seconds. Ping interval for tunnel stability. Min: 1s. Only for tcp and ws/wss mode. (Optional, default: 20s)
     mux_session = 1               # Number of mux sessions for tcpmux/wsmux/wssmux. (optional, default: 1).
     mux_version = 1               # SMUX protocol version (1 or 2). Version 2 may have extra features. (optional)
@@ -84,6 +83,7 @@ To start using the solution, you'll need to configure both server and client com
     sniffer_log ="/root/log.json" # Filename used to store network traffic and usage data logs. (optional, default backhaul.json)
     tls_cert = "/root/server.crt" # Path to the TLS certificate file for wss/wssmux. (mandatory).
     tls_key = "/root/server.key"  # Path to the TLS private key file for wss/wssmux. (mandatory).
+    log_level = "info"            # Log level ("panic", "fatal", "error", "warn", "info", "debug", "trace", optional, default: "info").
 
     ports = [ # Local to remote port mapping in this format LocalPort=RemotePort (mandatory).
         "4000=5201", # Bind to all local ip addresses.
@@ -107,7 +107,7 @@ To start using the solution, you'll need to configure both server and client com
    keepalive_period = 20         # Interval in seconds to send keep-alive packets. (optional, default: 20 seconds)
    nodelay = false               # Use TCP_NODELAY (optional, default: false).
    retry_interval = 1            # Retry interval in seconds (optional, default: 1).
-   log_level = "info"            # Log level ("panic", "fatal", "error", "warn", "info", "debug", "trace", optional, default: "info").
+   dial_timeout = 5              # Sets the max wait time for establishing a network connection. (optional, default: 5 seconds)
    mux_session = 1               # Number of mux sessions for tcpmux/wsmux/wssmux. (optional, default: 1).
    mux_version = 1               # SMUX protocol version (1 or 2). Version 2 may have extra features. (optional)
    mux_framesize = 32768         # 32 KB. The maximum size of a frame that can be sent over a connection. (optional)
@@ -116,6 +116,7 @@ To start using the solution, you'll need to configure both server and client com
    sniffer = false               # Enable or disable network sniffing for monitoring data. (optional, default false)
    web_port = 2060               # Port number for the web interface or monitoring interface. (optional, default 2060).
    sniffer_log ="/root/log.json" # Filename used to store network traffic and usage data logs. (optional, default backhaul.json)
+   log_level = "info"            # Log level ("panic", "fatal", "error", "warn", "info", "debug", "trace", optional, default: "info").
 
    forwarder = [ # Forward incoming connection to another address. optional.
       "4000=IP:PORT",
@@ -157,6 +158,7 @@ To start using the solution, you'll need to configure both server and client com
    transport = "tcp"
    token = "your_token" 
    keepalive_period = 20
+   dial_timeout = 5
    nodelay = true 
    retry_interval = 1
    sniffer = false
@@ -206,6 +208,7 @@ To start using the solution, you'll need to configure both server and client com
    transport = "tcpmux"
    token = "your_token" 
    keepalive_period = 20
+   dial_timeout = 5
    retry_interval = 1
    nodelay = true 
    mux_session = 1
@@ -253,6 +256,7 @@ To start using the solution, you'll need to configure both server and client com
    transport = "ws"
    token = "your_token" 
    keepalive_period = 20 
+   dial_timeout = 5
    retry_interval = 1
    nodelay = true 
    sniffer = false 
@@ -294,6 +298,7 @@ To start using the solution, you'll need to configure both server and client com
    transport = "wss"
    token = "your_token" 
    keepalive_period = 20
+   dial_timeout = 5
    retry_interval = 1  
    nodelay = true 
    sniffer = false 
@@ -336,6 +341,7 @@ To start using the solution, you'll need to configure both server and client com
    transport = "wsmux"
    token = "your_token" 
    keepalive_period = 20
+   dial_timeout = 5
    nodelay = true
    retry_interval = 1
    mux_session = 1
@@ -380,6 +386,7 @@ To start using the solution, you'll need to configure both server and client com
    transport = "wssmux"
    token = "your_token" 
    keepalive_period = 20
+   dial_timeout = 5
    nodelay = true
    retry_interval = 1
    mux_session = 1

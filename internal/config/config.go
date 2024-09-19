@@ -56,6 +56,7 @@ type ClientConfig struct {
 	Sniffer          bool          `toml:"sniffer"`
 	WebPort          int           `toml:"web_port"`
 	SnifferLog       string        `toml:"sniffer_log"`
+	DialTimeout      int           `toml:"dial_timeout"`
 }
 
 // Config represents the complete configuration, including both server and client settings.
