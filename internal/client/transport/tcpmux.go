@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,7 +35,6 @@ type TcpMuxConfig struct {
 	DialTimeOut      time.Duration
 	Token            string
 	MuxSession       int
-	Forwarder        map[int]string
 	MuxVersion       int
 	MaxFrameSize     int
 	MaxReceiveBuffer int
@@ -222,35 +223,51 @@ func (c *TcpMuxTransport) handleTCPSession(tcpsession net.Conn) {
 	case <-c.ctx.Done():
 		return
 	default:
-		port, err := utils.ReceiveBinaryInt(tcpsession)
+		remoteAddr, err := utils.ReceiveBinaryString(tcpsession)
 
 		if err != nil {
 			c.logger.Tracef("unable to get the port from the %s connection: %v", tcpsession.RemoteAddr().String(), err)
 			tcpsession.Close()
 			return
 		}
-		go c.localDialer(tcpsession, port)
+		go c.localDialer(tcpsession, remoteAddr)
 
 	}
 }
 
-func (c *TcpMuxTransport) localDialer(tunnelConnection net.Conn, port uint16) {
+func (c *TcpMuxTransport) localDialer(tunnelConnection net.Conn, remoteAddr string) {
 	select {
 	case <-c.ctx.Done():
 		return
 	default:
-		localAddress, ok := c.config.Forwarder[int(port)]
-		if !ok {
-			localAddress = fmt.Sprintf("127.0.0.1:%d", port)
+		// Extract the port
+		parts := strings.Split(remoteAddr, ":")
+		var port int
+		var err error
+		if len(parts) < 2 {
+			port, err = strconv.Atoi(parts[0])
+			if err != nil {
+				c.logger.Info("failed to find the remote port, ", err)
+				tunnelConnection.Close()
+				return
+			}
+			remoteAddr = fmt.Sprintf("127.0.0.1:%d", port)
+		} else {
+			port, err = strconv.Atoi(parts[1])
+			if err != nil {
+				c.logger.Info("failed to find the remote port, ", err)
+				tunnelConnection.Close()
+				return
+			}
 		}
 
-		localConnection, err := c.tcpDialer(localAddress, c.config.Nodelay)
+		localConnection, err := c.tcpDialer(remoteAddr, c.config.Nodelay)
 		if err != nil {
-			c.logger.Errorf("failed to connect to local address %s: %v", localAddress, err)
+			c.logger.Errorf("failed to connect to local address %s: %v", remoteAddr, err)
 			tunnelConnection.Close()
 			return
 		}
-		c.logger.Debugf("connected to local address %s successfully", localAddress)
-		go utils.ConnectionHandler(localConnection, tunnelConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffer)
+		c.logger.Debugf("connected to local address %s successfully", remoteAddr)
+		go utils.ConnectionHandler(localConnection, tunnelConnection, c.logger, c.usageMonitor, port, c.config.Sniffer)
 	}
 }
