@@ -41,17 +41,16 @@ func (s *Server) Start() {
 
 	if s.config.Transport == config.TCP {
 		tcpConfig := &transport.TcpConfig{
-			BindAddr:       s.config.BindAddr,
-			Nodelay:        s.config.Nodelay,
-			KeepAlive:      time.Duration(s.config.Keepalive) * time.Second,
-			ConnectionPool: s.config.ConnectionPool,
-			Token:          s.config.Token,
-			ChannelSize:    s.config.ChannelSize,
-			Ports:          s.config.Ports,
-			Sniffer:        s.config.Sniffer,
-			WebPort:        s.config.WebPort,
-			SnifferLog:     s.config.SnifferLog,
-			Heartbeat:      s.config.Heartbeat,
+			BindAddr:    s.config.BindAddr,
+			Nodelay:     s.config.Nodelay,
+			KeepAlive:   time.Duration(s.config.Keepalive) * time.Second,
+			Token:       s.config.Token,
+			ChannelSize: s.config.ChannelSize,
+			Ports:       s.config.Ports,
+			Sniffer:     s.config.Sniffer,
+			WebPort:     s.config.WebPort,
+			SnifferLog:  s.config.SnifferLog,
+			Heartbeat:   s.config.Heartbeat,
 		}
 
 		tcpServer := transport.NewTCPServer(s.ctx, tcpConfig, s.logger)
@@ -80,20 +79,19 @@ func (s *Server) Start() {
 
 	} else if s.config.Transport == config.WS || s.config.Transport == config.WSS {
 		wsConfig := &transport.WsConfig{
-			BindAddr:       s.config.BindAddr,
-			Nodelay:        s.config.Nodelay,
-			KeepAlive:      time.Duration(s.config.Keepalive) * time.Second,
-			ConnectionPool: s.config.ConnectionPool,
-			Token:          s.config.Token,
-			ChannelSize:    s.config.ChannelSize,
-			Ports:          s.config.Ports,
-			Sniffer:        s.config.Sniffer,
-			WebPort:        s.config.WebPort,
-			SnifferLog:     s.config.SnifferLog,
-			Mode:           s.config.Transport,
-			TLSCertFile:    s.config.TLSCertFile,
-			TLSKeyFile:     s.config.TLSKeyFile,
-			Heartbeat:      s.config.Heartbeat,
+			BindAddr:    s.config.BindAddr,
+			Nodelay:     s.config.Nodelay,
+			KeepAlive:   time.Duration(s.config.Keepalive) * time.Second,
+			Token:       s.config.Token,
+			ChannelSize: s.config.ChannelSize,
+			Ports:       s.config.Ports,
+			Sniffer:     s.config.Sniffer,
+			WebPort:     s.config.WebPort,
+			SnifferLog:  s.config.SnifferLog,
+			Mode:        s.config.Transport,
+			TLSCertFile: s.config.TLSCertFile,
+			TLSKeyFile:  s.config.TLSKeyFile,
+			Heartbeat:   s.config.Heartbeat,
 		}
 
 		wsServer := transport.NewWSServer(s.ctx, wsConfig, s.logger)
