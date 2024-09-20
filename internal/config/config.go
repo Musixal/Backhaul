@@ -46,7 +46,6 @@ type ClientConfig struct {
 	Nodelay          bool          `toml:"nodelay"`
 	Keepalive        int           `toml:"keepalive_period"`
 	LogLevel         string        `toml:"log_level"`
-	Forwarder        []string      `toml:"forwarder"`
 	PPROF            bool          `toml:"pprof"`
 	MuxSession       int           `toml:"mux_session"`
 	MuxVersion       int           `toml:"mux_version"`
