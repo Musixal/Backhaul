@@ -68,27 +68,30 @@ To start using the solution, you'll need to configure both server and client com
     bind_addr = "0.0.0.0:3080"    # Address and port for the server to listen on (mandatory).
     transport = "tcp"             # Protocol to use ("tcp", "tcpmux", "ws", "wss", "wsmux", "wssmux". mandatory).
     token = "your_token"          # Authentication token for secure communication (optional).
-    keepalive_period = 20         # Interval in seconds to send keep-alive packets.(optional, default: 20 seconds)
+    keepalive_period = 75         # Interval in seconds to send keep-alive packets.(optional, default: 75s)
     nodelay = false               # Enable TCP_NODELAY (optional, default: false).
     channel_size = 2048           # Tunnel channel size. Excess connections are discarded. Only for tcp and ws/wss mode (optional, default: 2048).
-    connection_pool = 8           # Number of pre-established connections. Only for tcp and ws/wss mode (optional, default: 8).
-    heartbeat = 20                # In seconds. Ping interval for tunnel stability. Min: 1s. Only for tcp and ws/wss mode. (Optional, default: 20s)
+    heartbeat = 40                # In seconds. Ping interval for tunnel stability. Min: 1s. Only for tcp and ws/wss mode. (Optional, default: 40s)
     mux_session = 1               # Number of mux sessions for tcpmux/wsmux/wssmux. (optional, default: 1).
     mux_version = 1               # SMUX protocol version (1 or 2). Version 2 may have extra features. (optional)
     mux_framesize = 32768         # 32 KB. The maximum size of a frame that can be sent over a connection. (optional)
     mux_recievebuffer = 4194304   # 4 MB. The maximum buffer size for incoming data per connection. (optional)
     mux_streambuffer = 65536      # 256 KB. The maximum buffer size per individual stream within a connection. (optional)
     sniffer = false               # Enable or disable network sniffing for monitoring data. (optional, default false)
-    web_port = 2060               # Port number for the web interface or monitoring interface. (optional, default 2060).
+    web_port = 2060               # Port number for the web interface or monitoring interface. (optional, default disabled).
     sniffer_log ="/root/log.json" # Filename used to store network traffic and usage data logs. (optional, default backhaul.json)
     tls_cert = "/root/server.crt" # Path to the TLS certificate file for wss/wssmux. (mandatory).
     tls_key = "/root/server.key"  # Path to the TLS private key file for wss/wssmux. (mandatory).
     log_level = "info"            # Log level ("panic", "fatal", "error", "warn", "info", "debug", "trace", optional, default: "info").
 
-    ports = [ # Local to remote port mapping in this format LocalPort=RemotePort (mandatory).
-        "4000=5201", # Bind to all local ip addresses.
-        "127.0.0.1:4001=5201", # Bind to specific local address.
-    ]
+    ports = [
+    "443",  # Listen on local port 443 and forward to remote port 443 (default forwarding).
+    "4000=5000",  # Listen on local port 4000 (bind to all local IPs) and forward to remote port 5000.
+    "127.0.0.2:4001=5001",  # Bind to specific local IP (127.0.0.2), listen on port 4001, and forward to remote port 5001.
+    "4002=1.1.1.1:5002",  # Listen on local port 4002 and forward to a specific remote IP (1.1.1.1) on port 5002.
+    "127.0.0.2:4003=1.1.1.1:5003",  # Bind to specific local IP (127.0.0.2), listen on port 4003, and forward to remote IP (1.1.1.1) on port 5003.
+   ]
+
     ```
 
    To start the `server`:
@@ -104,24 +107,20 @@ To start using the solution, you'll need to configure both server and client com
    remote_addr = "0.0.0.0:3080"  # Server address and port (mandatory).
    transport = "tcp"             # Protocol to use ("tcp", "tcpmux", "ws", "wss", "wsmux", "wssmux". mandatory).
    token = "your_token"          # Authentication token for secure communication (optional).
-   keepalive_period = 20         # Interval in seconds to send keep-alive packets. (optional, default: 20 seconds)
+   connection_pool = 8           # Number of pre-established connections. Only for tcp and ws/wss mode (optional, default: 8).
+   keepalive_period = 75         # Interval in seconds to send keep-alive packets. (optional, default: 75s)
    nodelay = false               # Use TCP_NODELAY (optional, default: false).
-   retry_interval = 1            # Retry interval in seconds (optional, default: 1).
-   dial_timeout = 5              # Sets the max wait time for establishing a network connection. (optional, default: 5 seconds)
+   retry_interval = 3            # Retry interval in seconds (optional, default: 3s).
+   dial_timeout = 60              # Sets the max wait time for establishing a network connection. (optional, default: 60s)
    mux_session = 1               # Number of mux sessions for tcpmux/wsmux/wssmux. (optional, default: 1).
    mux_version = 1               # SMUX protocol version (1 or 2). Version 2 may have extra features. (optional)
    mux_framesize = 32768         # 32 KB. The maximum size of a frame that can be sent over a connection. (optional)
    mux_recievebuffer = 4194304   # 4 MB. The maximum buffer size for incoming data per connection. (optional)
    mux_streambuffer = 65536      # 256 KB. The maximum buffer size per individual stream within a connection. (optional)
    sniffer = false               # Enable or disable network sniffing for monitoring data. (optional, default false)
-   web_port = 2060               # Port number for the web interface or monitoring interface. (optional, default 2060).
+   web_port = 2060               # Port number for the web interface or monitoring interface. (optional, default disabled).
    sniffer_log ="/root/log.json" # Filename used to store network traffic and usage data logs. (optional, default backhaul.json)
    log_level = "info"            # Log level ("panic", "fatal", "error", "warn", "info", "debug", "trace", optional, default: "info").
-
-   forwarder = [ # Forward incoming connection to another address. optional.
-      "4000=IP:PORT",
-      "4001=127.0.0.1:9090",
-   ]
    ```
 
    To start the `client`:
@@ -139,11 +138,10 @@ To start using the solution, you'll need to configure both server and client com
    bind_addr = "0.0.0.0:3080"
    transport = "tcp"
    token = "your_token"
-   keepalive_period = 20  
+   keepalive_period = 75  
    nodelay = true 
-   heartbeat = 20 
+   heartbeat = 40 
    channel_size = 2048
-   connection_pool = 8
    sniffer = false 
    web_port = 2060
    sniffer_log = "/root/backhaul.json"
@@ -157,10 +155,11 @@ To start using the solution, you'll need to configure both server and client com
    remote_addr = "0.0.0.0:3080"
    transport = "tcp"
    token = "your_token" 
-   keepalive_period = 20
-   dial_timeout = 5
+   connection_pool = 8
+   keepalive_period = 75
+   dial_timeout = 60
    nodelay = true 
-   retry_interval = 1
+   retry_interval = 3
    sniffer = false
    web_port = 2060 
    sniffer_log = "/root/backhaul.json"
@@ -187,7 +186,7 @@ To start using the solution, you'll need to configure both server and client com
    bind_addr = "0.0.0.0:3080"
    transport = "tcpmux"
    token = "your_token" 
-   keepalive_period = 20
+   keepalive_period = 75
    nodelay = true 
    mux_session = 1
    mux_version = 1
@@ -207,9 +206,9 @@ To start using the solution, you'll need to configure both server and client com
    remote_addr = "0.0.0.0:3080"
    transport = "tcpmux"
    token = "your_token" 
-   keepalive_period = 20
-   dial_timeout = 5
-   retry_interval = 1
+   keepalive_period = 75
+   dial_timeout = 60
+   retry_interval = 3
    nodelay = true 
    mux_session = 1
    mux_version = 1
@@ -237,9 +236,8 @@ To start using the solution, you'll need to configure both server and client com
    transport = "ws"
    token = "your_token" 
    channel_size = 2048
-   connection_pool = 8
-   keepalive_period = 20 
-   heartbeat = 20
+   keepalive_period = 75 
+   heartbeat = 40
    nodelay = true 
    sniffer = false 
    web_port = 2060
@@ -255,9 +253,10 @@ To start using the solution, you'll need to configure both server and client com
    remote_addr = "0.0.0.0:8080"
    transport = "ws"
    token = "your_token" 
-   keepalive_period = 20 
-   dial_timeout = 5
-   retry_interval = 1
+   connection_pool = 8
+   keepalive_period = 75 
+   dial_timeout = 60
+   retry_interval = 3
    nodelay = true 
    sniffer = false 
    web_port = 2060
@@ -279,7 +278,7 @@ To start using the solution, you'll need to configure both server and client com
    token = "your_token" 
    channel_size = 2048
    connection_pool = 8
-   keepalive_period = 20 
+   keepalive_period = 75 
    nodelay = true 
    tls_cert = "/root/server.crt"      
    tls_key = "/root/server.key"
@@ -297,9 +296,9 @@ To start using the solution, you'll need to configure both server and client com
    remote_addr = "0.0.0.0:8443"
    transport = "wss"
    token = "your_token" 
-   keepalive_period = 20
-   dial_timeout = 5
-   retry_interval = 1  
+   keepalive_period = 75
+   dial_timeout = 60
+   retry_interval = 3  
    nodelay = true 
    sniffer = false 
    web_port = 2060
@@ -320,7 +319,7 @@ To start using the solution, you'll need to configure both server and client com
    bind_addr = "0.0.0.0:3080"
    transport = "wsmux"
    token = "your_token" 
-   keepalive_period = 20
+   keepalive_period = 75
    mux_session = 1
    mux_version = 1
    mux_framesize = 32768 
@@ -340,10 +339,10 @@ To start using the solution, you'll need to configure both server and client com
    remote_addr = "0.0.0.0:3080"
    transport = "wsmux"
    token = "your_token" 
-   keepalive_period = 20
-   dial_timeout = 5
+   keepalive_period = 75
+   dial_timeout = 60
    nodelay = true
-   retry_interval = 1
+   retry_interval = 3
    mux_session = 1
    mux_version = 1
    mux_framesize = 32768 
@@ -363,7 +362,7 @@ To start using the solution, you'll need to configure both server and client com
    bind_addr = "0.0.0.0:443"
    transport = "wssmux"
    token = "your_token" 
-   keepalive_period = 20
+   keepalive_period = 75
    nodelay = true 
    mux_session = 1
    mux_version = 1
@@ -385,10 +384,10 @@ To start using the solution, you'll need to configure both server and client com
    remote_addr = "0.0.0.0:443"
    transport = "wssmux"
    token = "your_token" 
-   keepalive_period = 20
-   dial_timeout = 5
+   keepalive_period = 75
+   dial_timeout = 60
    nodelay = true
-   retry_interval = 1
+   retry_interval = 3
    mux_session = 1
    mux_version = 1
    mux_framesize = 32768 
