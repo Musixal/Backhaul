@@ -48,16 +48,16 @@ func (c *Client) Start() {
 
 	if c.config.Transport == config.TCP {
 		tcpConfig := &transport.TcpConfig{
-			RemoteAddr:    c.config.RemoteAddr,
-			Nodelay:       c.config.Nodelay,
-			KeepAlive:     time.Duration(c.config.Keepalive) * time.Second,
-			RetryInterval: time.Duration(c.config.RetryInterval) * time.Second,
-			Token:         c.config.Token,
-			Forwarder:     c.forwarderReader(c.config.Forwarder),
-			Sniffer:       c.config.Sniffer,
-			WebPort:       c.config.WebPort,
-			SnifferLog:    c.config.SnifferLog,
-			DialTimeOut:   time.Duration(c.config.DialTimeout) * time.Second,
+			RemoteAddr:     c.config.RemoteAddr,
+			Nodelay:        c.config.Nodelay,
+			ConnectionPool: c.config.ConnectionPool,
+			KeepAlive:      time.Duration(c.config.Keepalive) * time.Second,
+			RetryInterval:  time.Duration(c.config.RetryInterval) * time.Second,
+			Token:          c.config.Token,
+			Sniffer:        c.config.Sniffer,
+			WebPort:        c.config.WebPort,
+			SnifferLog:     c.config.SnifferLog,
+			DialTimeOut:    time.Duration(c.config.DialTimeout) * time.Second,
 		}
 		tcpClient := transport.NewTCPClient(c.ctx, tcpConfig, c.logger)
 		go tcpClient.ChannelDialer()
@@ -74,7 +74,6 @@ func (c *Client) Start() {
 			MaxFrameSize:     c.config.MaxFrameSize,
 			MaxReceiveBuffer: c.config.MaxReceiveBuffer,
 			MaxStreamBuffer:  c.config.MaxStreamBuffer,
-			Forwarder:        c.forwarderReader(c.config.Forwarder),
 			Sniffer:          c.config.Sniffer,
 			WebPort:          c.config.WebPort,
 			SnifferLog:       c.config.SnifferLog,
@@ -85,17 +84,17 @@ func (c *Client) Start() {
 
 	} else if c.config.Transport == config.WS || c.config.Transport == config.WSS {
 		WsConfig := &transport.WsConfig{
-			RemoteAddr:    c.config.RemoteAddr,
-			Nodelay:       c.config.Nodelay,
-			KeepAlive:     time.Duration(c.config.Keepalive) * time.Second,
-			RetryInterval: time.Duration(c.config.RetryInterval) * time.Second,
-			Token:         c.config.Token,
-			Forwarder:     c.forwarderReader(c.config.Forwarder),
-			Sniffer:       c.config.Sniffer,
-			WebPort:       c.config.WebPort,
-			SnifferLog:    c.config.SnifferLog,
-			Mode:          c.config.Transport,
-			DialTimeOut:   time.Duration(c.config.DialTimeout) * time.Second,
+			RemoteAddr:     c.config.RemoteAddr,
+			Nodelay:        c.config.Nodelay,
+			ConnectionPool: c.config.ConnectionPool,
+			KeepAlive:      time.Duration(c.config.Keepalive) * time.Second,
+			RetryInterval:  time.Duration(c.config.RetryInterval) * time.Second,
+			Token:          c.config.Token,
+			Sniffer:        c.config.Sniffer,
+			WebPort:        c.config.WebPort,
+			SnifferLog:     c.config.SnifferLog,
+			Mode:           c.config.Transport,
+			DialTimeOut:    time.Duration(c.config.DialTimeout) * time.Second,
 		}
 		WsClient := transport.NewWSClient(c.ctx, WsConfig, c.logger)
 		go WsClient.ChannelDialer()
@@ -111,7 +110,6 @@ func (c *Client) Start() {
 			MaxFrameSize:     c.config.MaxFrameSize,
 			MaxReceiveBuffer: c.config.MaxReceiveBuffer,
 			MaxStreamBuffer:  c.config.MaxStreamBuffer,
-			Forwarder:        c.forwarderReader(c.config.Forwarder),
 			Sniffer:          c.config.Sniffer,
 			WebPort:          c.config.WebPort,
 			SnifferLog:       c.config.SnifferLog,
