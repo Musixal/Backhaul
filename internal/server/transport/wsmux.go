@@ -108,20 +108,26 @@ func (s *WsMuxTransport) Restart() {
 func (s *WsMuxTransport) portConfigReader() {
 	// port mapping for listening on each local port
 	for _, portMapping := range s.config.Ports {
+		var localAddr string
 		parts := strings.Split(portMapping, "=")
-		if len(parts) != 2 {
-			s.logger.Fatalf("invalid port mapping format: %s", portMapping)
-			continue
-		}
-
-		localAddrStr := strings.TrimSpace(parts[0])
-		if _, err := strconv.Atoi(localAddrStr); err == nil {
-			localAddrStr = ":" + localAddrStr
+		if len(parts) < 2 {
+			port, err := strconv.Atoi(parts[0])
+			if err != nil {
+				s.logger.Fatalf("invalid port mapping format: %s", portMapping)
+			}
+			localAddr = fmt.Sprintf(":%d", port)
+			parts = append(parts, strconv.Itoa(port))
+			s.logger.Info(parts[1])
+		} else {
+			localAddr = strings.TrimSpace(parts[0])
+			if _, err := strconv.Atoi(localAddr); err == nil {
+				localAddr = ":" + localAddr // :3080 format
+			}
 		}
 
 		remoteAddr := strings.TrimSpace(parts[1])
 
-		go s.localListener(localAddrStr, remoteAddr)
+		go s.localListener(localAddr, remoteAddr)
 	}
 }
 
