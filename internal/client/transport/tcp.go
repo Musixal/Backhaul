@@ -4,7 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"runtime"
+	"strconv"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/musix/backhaul/internal/utils"
@@ -14,29 +18,31 @@ import (
 )
 
 type TcpTransport struct {
-	config         *TcpConfig
-	parentctx      context.Context
-	ctx            context.Context
-	cancel         context.CancelFunc
-	logger         *logrus.Logger
-	controlChannel net.Conn
-	restartMutex   sync.Mutex
-	heartbeatSig   string
-	chanSignal     string
-	usageMonitor   *web.Usage
+	config            *TcpConfig
+	parentctx         context.Context
+	ctx               context.Context
+	cancel            context.CancelFunc
+	logger            *logrus.Logger
+	controlChannel    net.Conn
+	restartMutex      sync.Mutex
+	heartbeatSig      string
+	chanSignal        string
+	usageMonitor      *web.Usage
+	activeConnections int
+	activeMu          sync.Mutex
 }
 type TcpConfig struct {
-	RemoteAddr    string
-	Nodelay       bool
-	KeepAlive     time.Duration
-	RetryInterval time.Duration
-	DialTimeOut   time.Duration
-	Token         string
-	Forwarder     map[int]string
-	Sniffer       bool
-	WebPort       int
-	SnifferLog    string
-	TunnelStatus  string
+	RemoteAddr     string
+	Nodelay        bool
+	KeepAlive      time.Duration
+	RetryInterval  time.Duration
+	DialTimeOut    time.Duration
+	ConnectionPool int
+	Token          string
+	Sniffer        bool
+	WebPort        int
+	SnifferLog     string
+	TunnelStatus   string
 }
 
 func NewTCPClient(parentCtx context.Context, config *TcpConfig, logger *logrus.Logger) *TcpTransport {
@@ -45,15 +51,17 @@ func NewTCPClient(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 
 	// Initialize the TcpTransport struct
 	client := &TcpTransport{
-		config:         config,
-		parentctx:      parentCtx,
-		ctx:            ctx,
-		cancel:         cancel,
-		logger:         logger,
-		controlChannel: nil, // will be set when a control connection is established
-		heartbeatSig:   "0", // Default heartbeat signal
-		chanSignal:     "1", // Default channel signal
-		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
+		config:            config,
+		parentctx:         parentCtx,
+		ctx:               ctx,
+		cancel:            cancel,
+		logger:            logger,
+		controlChannel:    nil, // will be set when a control connection is established
+		heartbeatSig:      "0", // Default heartbeat signal
+		chanSignal:        "1", // Default channel signal
+		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
+		activeConnections: 0,
+		activeMu:          sync.Mutex{},
 	}
 
 	return client
@@ -83,6 +91,8 @@ func (c *TcpTransport) Restart() {
 	c.controlChannel = nil
 	c.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.config.Sniffer, &c.config.TunnelStatus, c.logger)
 	c.config.TunnelStatus = ""
+	c.activeConnections = 0
+	c.activeMu = sync.Mutex{}
 
 	go c.ChannelDialer()
 
@@ -103,7 +113,7 @@ connectLoop:
 		case <-c.ctx.Done():
 			return
 		default:
-			tunnelTCPConn, err := c.tcpDialer(c.config.RemoteAddr, c.config.Nodelay)
+			tunnelTCPConn, err := c.tcpDialer(c.config.RemoteAddr)
 			if err != nil {
 				c.logger.Errorf("channel dialer: error dialing remote address %s: %v", c.config.RemoteAddr, err)
 				time.Sleep(c.config.RetryInterval)
@@ -145,6 +155,7 @@ connectLoop:
 
 				c.config.TunnelStatus = "Connected (TCP)"
 				go c.channelListener()
+				go c.poolChecker()
 				break connectLoop // break the loop
 			} else {
 				c.logger.Errorf("invalid token received. Expected: %s, Received: %s. Retrying...", c.config.Token, message)
@@ -194,6 +205,7 @@ func (c *TcpTransport) channelListener() {
 			case c.chanSignal:
 				c.logger.Debug("channel signal received, initiating tunnel dialer")
 				go c.tunnelDialer()
+
 			case c.heartbeatSig:
 				c.logger.Debug("heartbeat signal received successfully")
 			default:
@@ -212,6 +224,10 @@ func (c *TcpTransport) channelListener() {
 
 // Dialing to the tunnel server, chained functions, without retry
 func (c *TcpTransport) tunnelDialer() {
+	c.activeMu.Lock()
+	c.activeConnections++
+	c.activeMu.Unlock()
+
 	select {
 	case <-c.ctx.Done():
 		return
@@ -223,9 +239,12 @@ func (c *TcpTransport) tunnelDialer() {
 		c.logger.Debugf("initiating new connection to tunnel server at %s", c.config.RemoteAddr)
 
 		// Dial to the tunnel server
-		tunnelTCPConn, err := c.tcpDialer(c.config.RemoteAddr, c.config.Nodelay)
+		tunnelTCPConn, err := c.tcpDialer(c.config.RemoteAddr)
 		if err != nil {
 			c.logger.Error("failed to dial tunnel server: ", err)
+			c.activeMu.Lock()
+			c.activeConnections--
+			c.activeMu.Unlock()
 			return
 		}
 		go c.handleTCPSession(tunnelTCPConn)
@@ -233,43 +252,69 @@ func (c *TcpTransport) tunnelDialer() {
 }
 
 func (c *TcpTransport) handleTCPSession(tcpsession net.Conn) {
+	defer func() {
+		c.activeMu.Lock()
+		c.activeConnections--
+		c.activeMu.Unlock()
+	}()
+
 	select {
 	case <-c.ctx.Done():
 		return
 	default:
-		port, err := utils.ReceiveBinaryInt(tcpsession)
+		remoteAddr, err := utils.ReceiveBinaryString(tcpsession)
 		if err != nil {
 			c.logger.Debugf("failed to receive port from tunnel connection %s: %v", tcpsession.RemoteAddr().String(), err)
 			tcpsession.Close()
 			return
 		}
-		go c.localDialer(tcpsession, port)
+		go c.localDialer(tcpsession, remoteAddr)
 
 	}
 }
 
-func (c *TcpTransport) localDialer(tunnelConnection net.Conn, port uint16) {
+func (c *TcpTransport) localDialer(tunnelConnection net.Conn, remoteAddr string) {
 	select {
 	case <-c.ctx.Done():
 		return
 	default:
-		localAddress, ok := c.config.Forwarder[int(port)]
-		if !ok {
-			localAddress = fmt.Sprintf("127.0.0.1:%d", port)
+		// Extract the port
+		parts := strings.Split(remoteAddr, ":")
+		var port int
+		var err error
+		if len(parts) < 2 {
+			port, err = strconv.Atoi(parts[0])
+			if err != nil {
+				c.logger.Info("failed to find the remote port, ", err)
+				tunnelConnection.Close()
+				return
+			}
+			remoteAddr = fmt.Sprintf("127.0.0.1:%d", port)
+		} else {
+			port, err = strconv.Atoi(parts[1])
+			if err != nil {
+				c.logger.Info("failed to find the remote port, ", err)
+				tunnelConnection.Close()
+				return
+			}
 		}
 
-		localConnection, err := c.tcpDialer(localAddress, c.config.Nodelay)
+		localConnection, err := c.tcpDialer(remoteAddr)
 		if err != nil {
-			c.logger.Errorf("failed to connect to local address %s: %v", localAddress, err)
+			c.logger.Errorf("failed to connect to local address %s: %v", remoteAddr, err)
 			tunnelConnection.Close()
 			return
 		}
-		c.logger.Debugf("connected to local address %s successfully", localAddress)
-		go utils.ConnectionHandler(localConnection, tunnelConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffer)
+
+		c.logger.Debugf("connected to local address %s successfully", remoteAddr)
+		go utils.ConnectionHandler(localConnection, tunnelConnection, c.logger, c.usageMonitor, port, c.config.Sniffer)
 	}
 }
 
-func (c *TcpTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPConn, error) {
+func (c *TcpTransport) tcpDialer(address string) (*net.TCPConn, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), c.config.DialTimeOut)
+	defer cancel()
+
 	// Resolve the address to a TCP address
 	tcpAddr, err := net.ResolveTCPAddr("tcp", address)
 	if err != nil {
@@ -278,12 +323,13 @@ func (c *TcpTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPConn,
 
 	// options
 	dialer := &net.Dialer{
+		Control:   c.reusePortControl,
 		Timeout:   c.config.DialTimeOut, // Set the connection timeout
 		KeepAlive: c.config.KeepAlive,   // Set the keep-alive duration
 	}
 
 	// Dial the TCP connection with a timeout
-	conn, err := dialer.Dial("tcp", tcpAddr.String())
+	conn, err := dialer.DialContext(ctx, "tcp", tcpAddr.String())
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +341,7 @@ func (c *TcpTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPConn,
 		return nil, fmt.Errorf("failed to convert net.Conn to *net.TCPConn")
 	}
 
-	if !tcpnodelay {
+	if !c.config.Nodelay {
 		err = tcpConn.SetNoDelay(false)
 		if err != nil {
 			tcpConn.Close()
@@ -304,4 +350,57 @@ func (c *TcpTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPConn,
 	}
 
 	return tcpConn, nil
+}
+
+func (c *TcpTransport) poolChecker() {
+	ticker := time.NewTicker(time.Millisecond * 350)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+
+		case <-ticker.C:
+			c.logger.Tracef("active connections: %d", c.activeConnections)
+			if c.activeConnections < c.config.ConnectionPool/2 {
+				neededConn := c.config.ConnectionPool - c.activeConnections
+				for i := 0; i < neededConn; i++ {
+					go c.tunnelDialer()
+					time.Sleep(time.Millisecond * 10)
+				}
+
+			}
+
+		}
+
+	}
+
+}
+
+func (c *TcpTransport) reusePortControl(network, address string, s syscall.RawConn) error {
+	var controlErr error
+
+	// Set socket options
+	err := s.Control(func(fd uintptr) {
+		// Set SO_REUSEADDR
+		if err := syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1); err != nil {
+			controlErr = fmt.Errorf("failed to set SO_REUSEADDR: %v", err)
+			return
+		}
+
+		// Conditionally set SO_REUSEPORT only on Linux
+		if runtime.GOOS == "linux" {
+			if err := syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, 0xf /* SO_REUSEPORT */, 1); err != nil {
+				controlErr = fmt.Errorf("failed to set SO_REUSEPORT: %v", err)
+				return
+			}
+		}
+	})
+
+	if err != nil {
+		return err
+	}
+
+	return controlErr
 }
