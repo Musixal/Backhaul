@@ -3,11 +3,14 @@ package transport
 import (
 	"context"
 	"crypto/tls"
-	"encoding/binary"
 	"fmt"
 	"net"
 	"net/http"
+	"runtime"
+	"strconv"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/musix/backhaul/internal/config"
@@ -19,30 +22,32 @@ import (
 )
 
 type WsTransport struct {
-	config         *WsConfig
-	parentctx      context.Context
-	ctx            context.Context
-	cancel         context.CancelFunc
-	logger         *logrus.Logger
-	controlChannel *websocket.Conn
-	restartMutex   sync.Mutex
-	heartbeatSig   string
-	chanSignal     string
-	usageMonitor   *web.Usage
+	config            *WsConfig
+	parentctx         context.Context
+	ctx               context.Context
+	cancel            context.CancelFunc
+	logger            *logrus.Logger
+	controlChannel    *websocket.Conn
+	restartMutex      sync.Mutex
+	heartbeatSig      string
+	chanSignal        string
+	usageMonitor      *web.Usage
+	activeConnections int
+	activeMu          sync.Mutex
 }
 type WsConfig struct {
-	RemoteAddr    string
-	Nodelay       bool
-	KeepAlive     time.Duration
-	RetryInterval time.Duration
-	DialTimeOut   time.Duration
-	Token         string
-	Forwarder     map[int]string
-	Sniffer       bool
-	WebPort       int
-	SnifferLog    string
-	Mode          config.TransportType
-	TunnelStatus  string
+	RemoteAddr     string
+	Nodelay        bool
+	KeepAlive      time.Duration
+	RetryInterval  time.Duration
+	DialTimeOut    time.Duration
+	ConnectionPool int
+	Token          string
+	Sniffer        bool
+	WebPort        int
+	SnifferLog     string
+	Mode           config.TransportType
+	TunnelStatus   string
 }
 
 func NewWSClient(parentCtx context.Context, config *WsConfig, logger *logrus.Logger) *WsTransport {
@@ -51,15 +56,17 @@ func NewWSClient(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 
 	// Initialize the TcpTransport struct
 	client := &WsTransport{
-		config:         config,
-		parentctx:      parentCtx,
-		ctx:            ctx,
-		cancel:         cancel,
-		logger:         logger,
-		controlChannel: nil, // will be set when a control connection is established
-		heartbeatSig:   "0", // Default heartbeat signal
-		chanSignal:     "1", // Default channel signal
-		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
+		config:            config,
+		parentctx:         parentCtx,
+		ctx:               ctx,
+		cancel:            cancel,
+		logger:            logger,
+		controlChannel:    nil, // will be set when a control connection is established
+		heartbeatSig:      "0", // Default heartbeat signal
+		chanSignal:        "1", // Default channel signal
+		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
+		activeConnections: 0,
+		activeMu:          sync.Mutex{},
 	}
 
 	return client
@@ -87,6 +94,8 @@ func (c *WsTransport) Restart() {
 	c.controlChannel = nil
 	c.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.config.Sniffer, &c.config.TunnelStatus, c.logger)
 	c.config.TunnelStatus = ""
+	c.activeConnections = 0
+	c.activeMu = sync.Mutex{}
 
 	go c.ChannelDialer()
 
@@ -128,6 +137,7 @@ connectLoop:
 			c.config.TunnelStatus = "Connected (Websocket)"
 
 			go c.channelListener()
+			go c.poolChecker()
 
 			break connectLoop
 		}
@@ -165,6 +175,10 @@ func (c *WsTransport) channelListener() {
 }
 
 func (c *WsTransport) tunnelDialer() {
+	c.activeMu.Lock()
+	c.activeConnections++
+	c.activeMu.Unlock()
+
 	select {
 	case <-c.ctx.Done():
 		return
@@ -179,6 +193,9 @@ func (c *WsTransport) tunnelDialer() {
 		tunnelWSConn, err := c.wsDialer(c.config.RemoteAddr, "")
 		if err != nil {
 			c.logger.Errorf("failed to dial webSocket tunnel server: %v", err)
+			c.activeMu.Lock()
+			c.activeConnections--
+			c.activeMu.Unlock()
 			return
 		}
 		go c.handleWSSession(tunnelWSConn)
@@ -186,48 +203,68 @@ func (c *WsTransport) tunnelDialer() {
 }
 
 func (c *WsTransport) handleWSSession(wsSession *websocket.Conn) {
-loop:
+	defer func() {
+		c.activeMu.Lock()
+		c.activeConnections--
+		c.activeMu.Unlock()
+	}()
+
+loop: // loop for reading ping or addr
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
 		default:
-			_, portBytes, err := wsSession.ReadMessage()
-
+			_, remoteAddrBytes, err := wsSession.ReadMessage()
 			if err != nil {
 				c.logger.Debugf("unable to get port from websocket connection %s: %v", wsSession.RemoteAddr().String(), err)
 				wsSession.Close()
 				return
 			}
 
-			port := binary.BigEndian.Uint16(portBytes)
-			if port == 10 {
+			remoteAddr := string(remoteAddrBytes)
+			if remoteAddr == "PING" {
 				c.logger.Trace("ping recieved from the server")
 				continue loop
 			}
-			go c.localDialer(wsSession, port)
-			break loop
+			go c.localDialer(wsSession, remoteAddr)
+			return
 		}
 	}
 }
 
-func (c *WsTransport) localDialer(tunnelConnection *websocket.Conn, port uint16) {
+func (c *WsTransport) localDialer(tunnelConnection *websocket.Conn, remoteAddr string) {
 	select {
 	case <-c.ctx.Done():
 		return
 	default:
-		localAddress, ok := c.config.Forwarder[int(port)]
-		if !ok {
-			localAddress = fmt.Sprintf("127.0.0.1:%d", port)
+		// Extract the port
+		parts := strings.Split(remoteAddr, ":")
+		var port int
+		var err error
+		if len(parts) < 2 {
+			port, err = strconv.Atoi(parts[0])
+			if err != nil {
+				c.logger.Info("failed to find the remote port, ", err)
+				tunnelConnection.Close()
+				return
+			}
+			remoteAddr = fmt.Sprintf("127.0.0.1:%d", port)
+		} else {
+			port, err = strconv.Atoi(parts[1])
+			if err != nil {
+				c.logger.Info("failed to find the remote port, ", err)
+				tunnelConnection.Close()
+				return
+			}
 		}
-
-		localConnection, err := c.tcpDialer(localAddress, c.config.Nodelay)
+		localConnection, err := c.tcpDialer(remoteAddr)
 		if err != nil {
-			c.logger.Errorf("connecting to local address %s is not possible", localAddress)
+			c.logger.Errorf("connecting to local address %s is not possible", remoteAddr)
 			tunnelConnection.Close()
 			return
 		}
-		c.logger.Debugf("connected to local address %s successfully", localAddress)
+		c.logger.Debugf("connected to local address %s successfully", remoteAddr)
 		go utils.WSToTCPConnHandler(tunnelConnection, localConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffer)
 	}
 }
@@ -249,14 +286,14 @@ func (c *WsTransport) wsDialer(addr string, path string) (*websocket.Conn, error
 		dialer = websocket.Dialer{
 			HandshakeTimeout: c.config.DialTimeOut, // Set handshake timeout
 			NetDial: func(_, addr string) (net.Conn, error) {
-				conn, err := net.DialTimeout("tcp", addr, c.config.DialTimeOut)
+				conn, err := c.tcpDialer(addr)
 				if err != nil {
 					return nil, err
 				}
-				tcpConn := conn.(*net.TCPConn)
-				tcpConn.SetKeepAlive(true)                     // Enable TCP keepalive
-				tcpConn.SetKeepAlivePeriod(c.config.KeepAlive) // Set keepalive period
-				return tcpConn, nil
+				//tcpConn := conn.(*net.TCPConn)
+				conn.SetKeepAlive(true)                     // Enable TCP keepalive
+				conn.SetKeepAlivePeriod(c.config.KeepAlive) // Set keepalive period
+				return conn, nil
 			},
 		}
 	} else {
@@ -265,14 +302,13 @@ func (c *WsTransport) wsDialer(addr string, path string) (*websocket.Conn, error
 			TLSClientConfig:  tlsConfig,            // Pass the insecure TLS config here
 			HandshakeTimeout: c.config.DialTimeOut, // Set handshake timeout
 			NetDial: func(_, addr string) (net.Conn, error) {
-				conn, err := net.DialTimeout("tcp", addr, c.config.DialTimeOut)
+				conn, err := c.tcpDialer(addr)
 				if err != nil {
 					return nil, err
 				}
-				tcpConn := conn.(*net.TCPConn)
-				tcpConn.SetKeepAlive(true)                     // Enable TCP keepalive
-				tcpConn.SetKeepAlivePeriod(c.config.KeepAlive) // Set keepalive period
-				return tcpConn, nil
+				conn.SetKeepAlive(true)                     // Enable TCP keepalive
+				conn.SetKeepAlivePeriod(c.config.KeepAlive) // Set keepalive period
+				return conn, nil
 			},
 		}
 	}
@@ -286,7 +322,7 @@ func (c *WsTransport) wsDialer(addr string, path string) (*websocket.Conn, error
 	return tunnelWSConn, nil
 }
 
-func (c *WsTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPConn, error) {
+func (c *WsTransport) tcpDialer(address string) (*net.TCPConn, error) {
 	// Resolve the address to a TCP address
 	tcpAddr, err := net.ResolveTCPAddr("tcp", address)
 	if err != nil {
@@ -295,6 +331,7 @@ func (c *WsTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPConn, 
 
 	// options
 	dialer := &net.Dialer{
+		Control:   c.reusePortControl,
 		Timeout:   c.config.DialTimeOut, // Set the connection timeout
 		KeepAlive: c.config.KeepAlive,   // Set the keep-alive duration
 	}
@@ -312,7 +349,7 @@ func (c *WsTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPConn, 
 		return nil, fmt.Errorf("failed to convert net.Conn to *net.TCPConn")
 	}
 
-	if !tcpnodelay {
+	if !c.config.Nodelay {
 		err = tcpConn.SetNoDelay(false)
 		if err != nil {
 			tcpConn.Close()
@@ -321,4 +358,57 @@ func (c *WsTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPConn, 
 	}
 
 	return tcpConn, nil
+}
+
+func (c *WsTransport) poolChecker() {
+	ticker := time.NewTicker(time.Millisecond * 350)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+
+		case <-ticker.C:
+			c.logger.Tracef("active connections: %d", c.activeConnections)
+			if c.activeConnections < c.config.ConnectionPool/2 {
+				neededConn := c.config.ConnectionPool - c.activeConnections
+				for i := 0; i < neededConn; i++ {
+					go c.tunnelDialer()
+					time.Sleep(time.Millisecond * 10)
+				}
+
+			}
+
+		}
+
+	}
+
+}
+
+func (c *WsTransport) reusePortControl(network, address string, s syscall.RawConn) error {
+	var controlErr error
+
+	// Set socket options
+	err := s.Control(func(fd uintptr) {
+		// Set SO_REUSEADDR
+		if err := syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1); err != nil {
+			controlErr = fmt.Errorf("failed to set SO_REUSEADDR: %v", err)
+			return
+		}
+
+		// Conditionally set SO_REUSEPORT only on Linux
+		if runtime.GOOS == "linux" {
+			if err := syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, 0xf /* SO_REUSEPORT */, 1); err != nil {
+				controlErr = fmt.Errorf("failed to set SO_REUSEPORT: %v", err)
+				return
+			}
+		}
+	})
+
+	if err != nil {
+		return err
+	}
+
+	return controlErr
 }
