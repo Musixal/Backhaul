@@ -9,13 +9,13 @@ import (
 const ( // Default values
 	defaultToken          = "musix"
 	defaultChannelSize    = 2048
-	defaultRetryInterval  = 1 // only for client
+	defaultRetryInterval  = 3 // only for client
 	defaultConnectionPool = 8
 	defaultLogLevel       = "info"
 	defaultMuxSession     = 1
-	defaultKeepAlive      = 20
-	deafultHeartbeat      = 20 // 20 seconds
-	defaultDialTimeout    = 5  // 5 seconds
+	defaultKeepAlive      = 75
+	deafultHeartbeat      = 40 // 40 seconds
+	defaultDialTimeout    = 60 // 60 seconds
 	// related to smux
 	defaultMuxVersion       = 1
 	defaultMaxFrameSize     = 32768   // 32KB
@@ -55,8 +55,8 @@ func applyDefaults(cfg *config.Config) {
 	}
 
 	// Connection pool
-	if cfg.Server.ConnectionPool <= 0 {
-		cfg.Server.ConnectionPool = defaultConnectionPool
+	if cfg.Client.ConnectionPool <= 0 {
+		cfg.Client.ConnectionPool = defaultConnectionPool
 	}
 
 	// Mux Session
