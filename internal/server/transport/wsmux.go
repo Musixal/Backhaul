@@ -115,20 +115,13 @@ func (s *WsMuxTransport) portConfigReader() {
 		}
 
 		localAddrStr := strings.TrimSpace(parts[0])
-		// Check if localAddrStr is just a port (without an address)
 		if _, err := strconv.Atoi(localAddrStr); err == nil {
-			// If it's just a port, prefix it with ":"
 			localAddrStr = ":" + localAddrStr
 		}
 
-		remotePortStr := strings.TrimSpace(parts[1])
-		remotePort, err := strconv.Atoi(remotePortStr)
-		if err != nil {
-			s.logger.Fatalf("invalid remote port in mapping: %s", remotePortStr)
-			continue
-		}
+		remoteAddr := strings.TrimSpace(parts[1])
 
-		go s.localListener(localAddrStr, remotePort)
+		go s.localListener(localAddrStr, remoteAddr)
 	}
 }
 
@@ -259,7 +252,7 @@ func (s *WsMuxTransport) acceptStreamConn(wsConn *websocket.Conn, id int, wg *sy
 	}
 }
 
-func (s *WsMuxTransport) localListener(localAddr string, remotePort int) {
+func (s *WsMuxTransport) localListener(localAddr string, remoteAddr string) {
 	listener, err := net.Listen("tcp", localAddr)
 	if err != nil {
 		s.logger.Fatalf("failed to start listener on %s: %v", localAddr, err)
@@ -275,7 +268,7 @@ func (s *WsMuxTransport) localListener(localAddr string, remotePort int) {
 	acceptChan := make(chan net.Conn, s.config.ChannelSize)
 
 	// handle channel connections
-	go s.handleMUXSession(acceptChan, remotePort)
+	go s.handleMUXSession(acceptChan, remoteAddr)
 
 	go func() {
 		for {
@@ -327,7 +320,7 @@ func (s *WsMuxTransport) localListener(localAddr string, remotePort int) {
 	<-s.ctx.Done()
 }
 
-func (s *WsMuxTransport) handleMUXSession(acceptChan chan net.Conn, remotePort int) {
+func (s *WsMuxTransport) handleMUXSession(acceptChan chan net.Conn, remoteAddr string) {
 	for {
 		select {
 		case incomingConn := <-acceptChan:
@@ -349,8 +342,8 @@ func (s *WsMuxTransport) handleMUXSession(acceptChan chan net.Conn, remotePort i
 				return
 			}
 			// Send the target port over the connection
-			if err := utils.SendBinaryInt(stream, uint16(remotePort)); err != nil {
-				s.logger.Warnf("failed to send port %d over stream for session ID %d: %v", remotePort, id, err)
+			if err := utils.SendBinaryString(stream, remoteAddr); err != nil {
+				s.logger.Warnf("failed to send address %d over stream for session ID %d: %v", remoteAddr, id, err)
 				incomingConn.Close()
 				continue
 			}

@@ -34,18 +34,17 @@ type TcpTransport struct {
 }
 
 type TcpConfig struct {
-	BindAddr       string
-	Nodelay        bool
-	KeepAlive      time.Duration
-	ConnectionPool int
-	Token          string
-	ChannelSize    int
-	Ports          []string
-	Sniffer        bool
-	WebPort        int
-	SnifferLog     string
-	Heartbeat      int // in seconds
-	TunnelStatus   string
+	BindAddr     string
+	Nodelay      bool
+	KeepAlive    time.Duration
+	Token        string
+	ChannelSize  int
+	Ports        []string
+	Sniffer      bool
+	WebPort      int
+	SnifferLog   string
+	Heartbeat    int // in seconds
+	TunnelStatus string
 }
 
 func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.Logger) *TcpTransport {
@@ -62,7 +61,7 @@ func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		tunnelChannel:     make(chan net.Conn, config.ChannelSize),
 		getNewConnChan:    make(chan struct{}, config.ChannelSize),
 		controlChannel:    nil,                                           // will be set when a control connection is established
-		timeout:           1 * time.Second,                               // Default timeout for waiting for a tunnel connection
+		timeout:           30 * time.Second,                              // Default timeout for waiting for a tunnel connection
 		heartbeatDuration: time.Duration(config.Heartbeat) * time.Second, // Heartbeat duration
 		heartbeatSig:      "0",                                           // Default heartbeat signal
 		chanSignal:        "1",                                           // Default channel signal
@@ -124,7 +123,6 @@ func (s *TcpTransport) cleanupConnections() {
 }
 
 func (s *TcpTransport) portConfigReader() {
-	// port mapping for listening on each local port
 	for _, portMapping := range s.config.Ports {
 		parts := strings.Split(portMapping, "=")
 		if len(parts) != 2 {
@@ -132,21 +130,14 @@ func (s *TcpTransport) portConfigReader() {
 			continue
 		}
 
-		localAddrStr := strings.TrimSpace(parts[0])
-		// Check if localAddrStr is just a port (without an address)
-		if _, err := strconv.Atoi(localAddrStr); err == nil {
-			// If it's just a port, prefix it with ":"
-			localAddrStr = ":" + localAddrStr
+		localAddr := strings.TrimSpace(parts[0])
+		if _, err := strconv.Atoi(localAddr); err == nil {
+			localAddr = ":" + localAddr
 		}
 
-		remotePortStr := strings.TrimSpace(parts[1])
-		remotePort, err := strconv.Atoi(remotePortStr)
-		if err != nil {
-			s.logger.Fatalf("invalid remote port in mapping: %s", remotePortStr)
-			continue
-		}
+		remoteAddr := strings.TrimSpace(parts[1])
 
-		go s.localListener(localAddrStr, remotePort)
+		go s.localListener(localAddr, remoteAddr)
 	}
 }
 
@@ -171,7 +162,7 @@ func (s *TcpTransport) TunnelListener() {
 		go s.channelListener()
 	}
 
-	// Determine number of CPU threads.
+	//Determine number of CPU threads.
 	numProcs := runtime.GOMAXPROCS(0)
 	s.logger.Infof("spawning %d workers to handle incoming connections", numProcs)
 
@@ -294,7 +285,6 @@ func (s *TcpTransport) channelListener() {
 
 			// call the functions
 			go s.getNewConnection()
-			go s.poolChecker()
 			go s.heartbeat()
 			go s.portConfigReader()
 			go s.getClosedSignal()
@@ -328,34 +318,6 @@ func (s *TcpTransport) heartbeat() {
 				return
 			}
 			s.logger.Trace("heartbeat signal sent successfully")
-		}
-	}
-}
-
-func (s *TcpTransport) poolChecker() {
-	ticker := time.NewTicker(time.Millisecond * 350)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-s.ctx.Done():
-			return
-
-		case <-ticker.C:
-			currentPoolSize := len(s.tunnelChannel)
-			if currentPoolSize < s.config.ConnectionPool {
-				neededConnections := s.config.ConnectionPool - currentPoolSize
-
-			loop:
-				for i := 0; i < neededConnections; i++ {
-					select {
-					case s.getNewConnChan <- struct{}{}:
-					default:
-						s.logger.Trace("getNewConnChan is full, skipping new connection")
-						break loop
-					}
-				}
-			}
 		}
 	}
 }
@@ -411,7 +373,7 @@ func (s *TcpTransport) getNewConnection() {
 	}
 }
 
-func (s *TcpTransport) localListener(localAddr string, remotePort int) {
+func (s *TcpTransport) localListener(localAddr string, remoteAddr string) {
 	listener, err := net.Listen("tcp", localAddr)
 	if err != nil {
 		s.logger.Fatalf("failed to listen on %s: %v", localAddr, err)
@@ -425,7 +387,8 @@ func (s *TcpTransport) localListener(localAddr string, remotePort int) {
 
 	// make a channel and run the handler
 	acceptChan := make(chan net.Conn, s.config.ChannelSize)
-	go s.handleTCPSession(remotePort, acceptChan)
+
+	go s.handleTCPSession(remoteAddr, acceptChan)
 
 	go func() {
 		for {
@@ -460,14 +423,12 @@ func (s *TcpTransport) localListener(localAddr string, remotePort int) {
 
 				s.logger.Debugf("accepted incoming TCP connection from %s", tcpConn.RemoteAddr().String())
 
-				if len(s.tunnelChannel) < s.config.ConnectionPool {
-					select {
-					case s.getNewConnChan <- struct{}{}:
-						// Successfully requested a new connection
-					default:
-						// The channel is full, do nothing
-						s.logger.Warn("getNewConnChan is full, cannot request a new connection")
-					}
+				select {
+				case s.getNewConnChan <- struct{}{}:
+					// Successfully requested a new connection
+				default:
+					// The channel is full, do nothing
+					s.logger.Warn("getNewConnChan is full, cannot request a new connection")
 				}
 
 				select {
@@ -485,7 +446,7 @@ func (s *TcpTransport) localListener(localAddr string, remotePort int) {
 	<-s.ctx.Done()
 }
 
-func (s *TcpTransport) handleTCPSession(remotePort int, acceptChan chan net.Conn) {
+func (s *TcpTransport) handleTCPSession(remoteAddr string, acceptChan chan net.Conn) {
 	for {
 		select {
 		case incomingConn := <-acceptChan:
@@ -493,9 +454,9 @@ func (s *TcpTransport) handleTCPSession(remotePort int, acceptChan chan net.Conn
 			for {
 				select {
 				case tunnelConnection := <-s.tunnelChannel:
-					// Send the target port over the connection
-					if err := utils.SendBinaryInt(tunnelConnection, uint16(remotePort)); err != nil {
-						s.logger.Infof("%v", err) // failed to send port number
+					// Send the target addr over the connection
+					if err := utils.SendBinaryString(tunnelConnection, remoteAddr); err != nil {
+						s.logger.Infof("%v", err)
 						tunnelConnection.Close()
 						continue innerloop
 					}
@@ -504,8 +465,7 @@ func (s *TcpTransport) handleTCPSession(remotePort int, acceptChan chan net.Conn
 					break innerloop
 
 				case <-time.After(s.timeout):
-					s.logger.Warn("tunnel connection unavailable, requesting new tunnel connection")
-					s.getNewConnChan <- struct{}{}
+					s.logger.Warn("tunnel connection unavailable")
 					continue
 
 				case <-s.ctx.Done():

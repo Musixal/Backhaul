@@ -28,30 +28,28 @@ type WsTransport struct {
 	getNewConnChan    chan struct{}
 	controlChannel    *websocket.Conn
 	restartMutex      sync.Mutex
-	timeout           time.Duration
 	heartbeatDuration time.Duration
 	heartbeatSig      string
 	chanSignal        string
-	mu                sync.Mutex
+	chanMu            sync.Mutex
 	usageMonitor      *web.Usage
 }
 
 type WsConfig struct {
-	BindAddr       string
-	Nodelay        bool
-	KeepAlive      time.Duration
-	ConnectionPool int
-	Token          string
-	ChannelSize    int
-	Ports          []string
-	Sniffer        bool
-	WebPort        int
-	SnifferLog     string
-	TLSCertFile    string               // Path to the TLS certificate file
-	TLSKeyFile     string               // Path to the TLS key file
-	Mode           config.TransportType // ws or wss
-	Heartbeat      int                  // in seconds
-	TunnelStatus   string
+	BindAddr     string
+	Nodelay      bool
+	KeepAlive    time.Duration
+	Token        string
+	ChannelSize  int
+	Ports        []string
+	Sniffer      bool
+	WebPort      int
+	SnifferLog   string
+	TLSCertFile  string               // Path to the TLS certificate file
+	TLSKeyFile   string               // Path to the TLS key file
+	Mode         config.TransportType // ws or wss
+	Heartbeat    int                  // in seconds
+	TunnelStatus string
 }
 
 type TunnelChannel struct {
@@ -74,7 +72,6 @@ func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 		tunnelChannel:     make(chan TunnelChannel, config.ChannelSize),
 		getNewConnChan:    make(chan struct{}, config.ChannelSize),
 		controlChannel:    nil,                                           // will be set when a control connection is established
-		timeout:           1 * time.Second,                               // Default timeout
 		heartbeatDuration: time.Duration(config.Heartbeat) * time.Second, // Default heartbeat duration
 		heartbeatSig:      "0",                                           // Default heartbeat signal
 		chanSignal:        "1",                                           // Default channel signal
@@ -179,20 +176,13 @@ func (s *WsTransport) portConfigReader() {
 		}
 
 		localAddrStr := strings.TrimSpace(parts[0])
-		// Check if localAddrStr is just a port (without an address)
 		if _, err := strconv.Atoi(localAddrStr); err == nil {
-			// If it's just a port, prefix it with ":"
 			localAddrStr = ":" + localAddrStr
 		}
 
-		remotePortStr := strings.TrimSpace(parts[1])
-		remotePort, err := strconv.Atoi(remotePortStr)
-		if err != nil {
-			s.logger.Fatalf("invalid remote port in mapping: %s", remotePortStr)
-			continue
-		}
+		remoteAddr := strings.TrimSpace(parts[1])
 
-		go s.localListener(localAddrStr, remotePort)
+		go s.localListener(localAddrStr, remoteAddr)
 	}
 }
 
@@ -210,43 +200,15 @@ func (s *WsTransport) heartbeat() {
 				go s.Restart()
 				return
 			}
-			s.mu.Lock()
+			s.chanMu.Lock() // race condition vs getNewConnection func
 			err := s.controlChannel.WriteMessage(websocket.TextMessage, []byte(s.heartbeatSig))
-			s.mu.Unlock()
+			s.chanMu.Unlock()
 			if err != nil {
 				s.logger.Errorf("Failed to send heartbeat signal. Error: %v. Restarting server...", err)
 				go s.Restart()
 				return
 			}
 			s.logger.Debug("heartbeat signal sent successfully")
-		}
-	}
-}
-
-func (s *WsTransport) poolChecker() {
-	ticker := time.NewTicker(time.Millisecond * 350)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-s.ctx.Done():
-			return
-
-		case <-ticker.C:
-			currentPoolSize := len(s.tunnelChannel)
-			if currentPoolSize < s.config.ConnectionPool {
-				neededConnections := s.config.ConnectionPool - currentPoolSize
-
-			loop:
-				for i := 0; i < neededConnections; i++ {
-					select {
-					case s.getNewConnChan <- struct{}{}:
-					default:
-						s.logger.Trace("getNewConnChan is full, skipping new connection")
-						break loop
-					}
-				}
-			}
 		}
 	}
 }
@@ -258,9 +220,9 @@ func (s *WsTransport) getNewConnection() {
 			return
 
 		case <-s.getNewConnChan:
-			s.mu.Lock()
+			s.chanMu.Lock()
 			err := s.controlChannel.WriteMessage(websocket.TextMessage, []byte(s.chanSignal))
-			s.mu.Unlock()
+			s.chanMu.Unlock()
 			if err != nil {
 				s.logger.Error("error sending channel signal, attempting to restart server...")
 				go s.Restart()
@@ -315,7 +277,6 @@ func (s *WsTransport) TunnelListener() {
 
 				go s.getNewConnection()
 				go s.heartbeat()
-				go s.poolChecker()
 				go s.portConfigReader()
 				go s.getClosedSignal()
 
@@ -371,7 +332,7 @@ func (s *WsTransport) TunnelListener() {
 	}
 }
 
-func (s *WsTransport) localListener(localAddr string, remotePort int) {
+func (s *WsTransport) localListener(localAddr string, remoteAddr string) {
 	portListener, err := net.Listen("tcp", localAddr)
 	if err != nil {
 		s.logger.Fatalf("failed to start listener on %s: %v", localAddr, err)
@@ -388,7 +349,7 @@ func (s *WsTransport) localListener(localAddr string, remotePort int) {
 
 	// start accepting incoming connections
 	go s.acceptLocConn(portListener, acceptChan)
-	go s.handleWSSession(remotePort, acceptChan)
+	go s.handleWSSession(remoteAddr, acceptChan)
 
 	<-s.ctx.Done()
 }
@@ -426,14 +387,12 @@ func (s *WsTransport) acceptLocConn(listener net.Listener, acceptChan chan net.C
 			tcpConn.SetKeepAlive(true)
 			tcpConn.SetKeepAlivePeriod(s.config.KeepAlive)
 
-			if len(s.tunnelChannel) < s.config.ConnectionPool {
-				select {
-				case s.getNewConnChan <- struct{}{}:
-					// Successfully requested a new connection
-				default:
-					// The channel is full, do nothing
-					s.logger.Warn("getNewConnChan is full, cannot request a new connection")
-				}
+			select {
+			case s.getNewConnChan <- struct{}{}:
+				// Successfully requested a new connection
+			default:
+				// The channel is full, do nothing
+				s.logger.Warn("getNewConnChan is full, cannot request a new connection")
 			}
 
 			select {
@@ -448,7 +407,7 @@ func (s *WsTransport) acceptLocConn(listener net.Listener, acceptChan chan net.C
 	}
 }
 
-func (s *WsTransport) handleWSSession(remotePort int, acceptChan chan net.Conn) {
+func (s *WsTransport) handleWSSession(remoteAddr string, acceptChan chan net.Conn) {
 	for {
 		select {
 		case incomingConn := <-acceptChan:
@@ -458,7 +417,7 @@ func (s *WsTransport) handleWSSession(remotePort int, acceptChan chan net.Conn) 
 				case tunnelConnection := <-s.tunnelChannel:
 					close(tunnelConnection.ping)
 					tunnelConnection.mu.Lock()
-					if err := utils.SendWebSocketInt(tunnelConnection.conn, uint16(remotePort)); err != nil {
+					if err := tunnelConnection.conn.WriteMessage(websocket.TextMessage, []byte(remoteAddr)); err != nil {
 						s.logger.Debugf("%v", err) // failed to send port number
 						tunnelConnection.conn.Close()
 						continue innerloop
@@ -467,7 +426,7 @@ func (s *WsTransport) handleWSSession(remotePort int, acceptChan chan net.Conn) 
 					go utils.WSToTCPConnHandler(tunnelConnection.conn, incomingConn, s.logger, s.usageMonitor, incomingConn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
 					break innerloop
 
-				case <-time.After(s.timeout):
+				case <-time.After(time.Second * 30):
 					s.logger.Warn("tunnel connection unavailable, request a new connection")
 					s.getNewConnChan <- struct{}{}
 					continue innerloop
@@ -501,7 +460,7 @@ func (s *WsTransport) pingSender(conn *TunnelChannel) {
 				return
 			}
 
-			if err := utils.SendWebSocketInt(conn.conn, 10); err != nil {
+			if err := conn.conn.WriteMessage(websocket.TextMessage, []byte("PING")); err != nil {
 				conn.mu.Unlock()
 				conn.conn.Close()
 				return

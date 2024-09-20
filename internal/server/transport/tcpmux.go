@@ -94,7 +94,6 @@ func (s *TcpMuxTransport) Restart() {
 }
 
 func (s *TcpMuxTransport) portConfigReader() {
-	// port mapping for listening on each local port
 	for _, portMapping := range s.config.Ports {
 		parts := strings.Split(portMapping, "=")
 		if len(parts) != 2 {
@@ -103,20 +102,13 @@ func (s *TcpMuxTransport) portConfigReader() {
 		}
 
 		localAddrStr := strings.TrimSpace(parts[0])
-		// Check if localAddrStr is just a port (without an address)
 		if _, err := strconv.Atoi(localAddrStr); err == nil {
-			// If it's just a port, prefix it with ":"
 			localAddrStr = ":" + localAddrStr
 		}
 
-		remotePortStr := strings.TrimSpace(parts[1])
-		remotePort, err := strconv.Atoi(remotePortStr)
-		if err != nil {
-			s.logger.Fatalf("invalid remote port in mapping: %s", remotePortStr)
-			continue
-		}
+		remoteAddr := strings.TrimSpace(parts[1])
 
-		go s.localListener(localAddrStr, remotePort)
+		go s.localListener(localAddrStr, remoteAddr)
 	}
 }
 
@@ -245,13 +237,13 @@ func (s *TcpMuxTransport) acceptStreamConn(listener net.Listener, id int, wg *sy
 				session.Close()
 
 				// For safety
-				time.Sleep(2 * time.Second)
+				time.Sleep(1 * time.Second)
 			}
 		}
 	}
 }
 
-func (s *TcpMuxTransport) localListener(localAddr string, remotePort int) {
+func (s *TcpMuxTransport) localListener(localAddr string, remoteAddr string) {
 	listener, err := net.Listen("tcp", localAddr)
 	if err != nil {
 		s.logger.Fatalf("failed to start listener on %s: %v", localAddr, err)
@@ -267,7 +259,7 @@ func (s *TcpMuxTransport) localListener(localAddr string, remotePort int) {
 	acceptChan := make(chan net.Conn, s.config.ChannelSize)
 
 	// handle channel connections
-	go s.handleMUXSession(acceptChan, remotePort)
+	go s.handleMUXSession(acceptChan, remoteAddr)
 
 	go func() {
 		for {
@@ -319,7 +311,7 @@ func (s *TcpMuxTransport) localListener(localAddr string, remotePort int) {
 	<-s.ctx.Done()
 }
 
-func (s *TcpMuxTransport) handleMUXSession(acceptChan chan net.Conn, remotePort int) {
+func (s *TcpMuxTransport) handleMUXSession(acceptChan chan net.Conn, remoteAddr string) {
 	for {
 		select {
 		case incomingConn := <-acceptChan:
@@ -341,8 +333,8 @@ func (s *TcpMuxTransport) handleMUXSession(acceptChan chan net.Conn, remotePort 
 				return
 			}
 			// Send the target port over the connection
-			if err := utils.SendBinaryInt(stream, uint16(remotePort)); err != nil {
-				s.logger.Warnf("Failed to send port %d over stream for session ID %d: %v", remotePort, id, err)
+			if err := utils.SendBinaryString(stream, remoteAddr); err != nil {
+				s.logger.Errorf("Failed to send address %d over stream for session ID %d: %v", remoteAddr, id, err)
 				incomingConn.Close()
 				continue
 			}
