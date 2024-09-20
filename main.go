@@ -9,7 +9,7 @@ import (
 	"github.com/musix/backhaul/cmd"
 )
 
-// Define the version of the application
+// Define the version of the application -v
 const version = "v0.3.3"
 
 func main() {
