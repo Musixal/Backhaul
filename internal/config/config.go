@@ -21,7 +21,6 @@ type ServerConfig struct {
 	Keepalive        int           `toml:"keepalive_period"`
 	ChannelSize      int           `toml:"channel_size"`
 	LogLevel         string        `toml:"log_level"`
-	ConnectionPool   int           `toml:"connection_pool"`
 	Ports            []string      `toml:"ports"`
 	PPROF            bool          `toml:"pprof"`
 	MuxSession       int           `toml:"mux_session"`
@@ -42,6 +41,7 @@ type ClientConfig struct {
 	RemoteAddr       string        `toml:"remote_addr"`
 	Transport        TransportType `toml:"transport"`
 	Token            string        `toml:"token"`
+	ConnectionPool   int           `toml:"connection_pool"`
 	RetryInterval    int           `toml:"retry_interval"`
 	Nodelay          bool          `toml:"nodelay"`
 	Keepalive        int           `toml:"keepalive_period"`
