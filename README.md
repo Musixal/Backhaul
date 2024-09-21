@@ -277,7 +277,6 @@ To start using the solution, you'll need to configure both server and client com
    transport = "wss"
    token = "your_token" 
    channel_size = 2048
-   connection_pool = 8
    keepalive_period = 75 
    nodelay = true 
    tls_cert = "/root/server.crt"      
@@ -296,6 +295,7 @@ To start using the solution, you'll need to configure both server and client com
    remote_addr = "0.0.0.0:8443"
    transport = "wss"
    token = "your_token" 
+   connection_pool = 8
    keepalive_period = 75
    dial_timeout = 60
    retry_interval = 3  
