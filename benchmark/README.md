@@ -12,7 +12,7 @@ We measured the bandwidth using `iperf3`:
 iperf3 -c 127.0.0.1
 ```
 
-![Bandwidth Test](charts/1.png)
+<img src="https://github.com/Musixal/Backhaul/blob/main/benchmark/charts/1.png?raw=true" alt="Bandwidth Test" width="500"/>
 
 ## Apache Benchmark (ab) Test
 
@@ -27,7 +27,7 @@ ab -n 10000 -c <Concurrency_Level> <URL>
 ### Results:
 
 * Requests per Second:*
-![Requests per Second](charts/2.png)
+<img src="https://github.com/Musixal/Backhaul/blob/main/benchmark/charts/2.png?raw=true" alt="Requests per Second" width="500"/>
 
 * Time per Request (mean):*
-![Time per Request](charts/3.png)
+<img src="https://github.com/Musixal/Backhaul/blob/main/benchmark/charts/3.png?raw=true" alt="Time per Request" width="500"/>
