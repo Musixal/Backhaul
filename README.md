@@ -500,9 +500,7 @@ journalctl -u backhaul.service -e -f
 
 ## Benchmark
 
-macOS 15.0
-Macbook Air M1
-
+For in-depth information, please visit the dedicated [Benchmark page](./benchmark/).
 
 
 ## License
