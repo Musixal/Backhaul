@@ -20,8 +20,9 @@ Welcome to the **`Backhaul`** project! This project provides a high-performance 
 4. [Generating a Self-Signed TLS Certificate with OpenSSL](#generating-a-self-signed-tls-certificate-with-openssl)
 5. [Running backhaul as a service](#running-backhaul-as-a-service)
 6. [FAQ](#faq)
-7. [License](#license)
-8. [Donation](#donation)
+7. [Benchmark](#benchmark)
+8. [License](#license)
+9. [Donation](#donation)
 
 ---
 
@@ -495,6 +496,12 @@ journalctl -u backhaul.service -e -f
 * `tcpmux`: Use if you need to handle multiple sessions over a single connection.
 * `ws`: Use if you need to traverse HTTP-based firewalls or proxies.
 * `wss`: Use this for secure WebSocket connections that need to traverse HTTP-based firewalls or proxies. It encrypts data for added security, similar to WS but with encryption.
+
+
+## Benchmark
+
+macOS 15.0
+Macbook Air M1
 
 
 
