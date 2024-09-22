@@ -12,7 +12,7 @@ We measured the bandwidth using `iperf3`:
 iperf3 -c 127.0.0.1
 ```
 
-![Bandwidth Test](benchmark/1.png)
+![Bandwidth Test](charts/1.png)
 
 ## Apache Benchmark (ab) Test
 
@@ -27,7 +27,7 @@ ab -n 10000 -c <Concurrency_Level> <URL>
 ### Results:
 
 * Requests per Second:*
-![Requests per Second](benchmark/2.png)
+![Requests per Second](charts/2.png)
 
 * Time per Request (mean):*
-![Time per Request](benchmark/3.png)
+![Time per Request](charts/3.png)
