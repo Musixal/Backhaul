@@ -26,8 +26,8 @@ ab -n 10000 -c <Concurrency_Level> <URL>
 
 ### Results:
 
-* Requests per Second:*
+* **Requests per Second**:
 <img src="https://github.com/Musixal/Backhaul/blob/main/benchmark/charts/2.png?raw=true" alt="Requests per Second" width="500"/>
 
-* Time per Request (mean):*
+* **Time per Request (mean)**:
 <img src="https://github.com/Musixal/Backhaul/blob/main/benchmark/charts/3.png?raw=true" alt="Time per Request" width="500"/>
