@@ -117,7 +117,6 @@ func (s *WsMuxTransport) portConfigReader() {
 			}
 			localAddr = fmt.Sprintf(":%d", port)
 			parts = append(parts, strconv.Itoa(port))
-			s.logger.Info(parts[1])
 		} else {
 			localAddr = strings.TrimSpace(parts[0])
 			if _, err := strconv.Atoi(localAddr); err == nil {
