@@ -307,7 +307,7 @@ func (c *TcpTransport) localDialer(tunnelConnection net.Conn, remoteAddr string)
 		}
 
 		c.logger.Debugf("connected to local address %s successfully", remoteAddr)
-		go utils.ConnectionHandler(localConnection, tunnelConnection, c.logger, c.usageMonitor, port, c.config.Sniffer)
+		go utils.TCPConnectionHandler(localConnection, tunnelConnection, c.logger, c.usageMonitor, port, c.config.Sniffer)
 	}
 }
 

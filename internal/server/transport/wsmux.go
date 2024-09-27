@@ -353,7 +353,7 @@ func (s *WsMuxTransport) handleMUXSession(acceptChan chan net.Conn, remoteAddr s
 				continue
 			}
 
-			go utils.ConnectionHandler(stream, incomingConn, s.logger, s.usageMonitor, incomingConn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
+			go utils.TCPConnectionHandler(stream, incomingConn, s.logger, s.usageMonitor, incomingConn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
 
 		case <-s.ctx.Done():
 			return

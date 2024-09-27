@@ -455,7 +455,7 @@ func (s *TcpTransport) handleTCPSession(remoteAddr string, acceptChan chan net.C
 						continue innerloop
 					}
 					// Handle data exchange between connections
-					go utils.ConnectionHandler(incomingConn, tunnelConnection, s.logger, s.usageMonitor, incomingConn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
+					go utils.TCPConnectionHandler(incomingConn, tunnelConnection, s.logger, s.usageMonitor, incomingConn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
 					break innerloop
 
 				case <-time.After(s.timeout):

@@ -428,7 +428,7 @@ func (s *WsTransport) handleWSSession(remoteAddr string, acceptChan chan net.Con
 						continue innerloop
 					}
 					// Handle data exchange between connections
-					go utils.WSToTCPConnHandler(tunnelConnection.conn, incomingConn, s.logger, s.usageMonitor, incomingConn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
+					go utils.WSConnectionHandler(tunnelConnection.conn, incomingConn, s.logger, s.usageMonitor, incomingConn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
 					break innerloop
 
 				case <-time.After(time.Second * 30):

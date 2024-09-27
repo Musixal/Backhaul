@@ -265,7 +265,7 @@ func (c *WsTransport) localDialer(tunnelConnection *websocket.Conn, remoteAddr s
 			return
 		}
 		c.logger.Debugf("connected to local address %s successfully", remoteAddr)
-		go utils.WSToTCPConnHandler(tunnelConnection, localConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffer)
+		go utils.WSConnectionHandler(tunnelConnection, localConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffer)
 	}
 }
 

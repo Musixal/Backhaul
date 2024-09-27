@@ -214,7 +214,7 @@ func (c *WsMuxTransport) localDialer(tunnelConnection net.Conn, remoteAddr strin
 			return
 		}
 		c.logger.Debugf("connected to local address %s successfully", remoteAddr)
-		go utils.ConnectionHandler(localConnection, tunnelConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffer)
+		go utils.TCPConnectionHandler(localConnection, tunnelConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffer)
 	}
 }
 
