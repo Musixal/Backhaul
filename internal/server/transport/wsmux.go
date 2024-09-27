@@ -348,7 +348,7 @@ func (s *WsMuxTransport) handleMUXSession(acceptChan chan net.Conn, remoteAddr s
 			}
 			// Send the target port over the connection
 			if err := utils.SendBinaryString(stream, remoteAddr); err != nil {
-				s.logger.Warnf("failed to send address %d over stream for session ID %d: %v", remoteAddr, id, err)
+				s.logger.Warnf("failed to send address %v over stream for session ID %d: %v", remoteAddr, id, err)
 				incomingConn.Close()
 				continue
 			}
