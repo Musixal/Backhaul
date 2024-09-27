@@ -11,7 +11,7 @@ import (
 )
 
 // WebSocketToTCPConnectionHandler handles data transfer between a WebSocket and a TCP connection
-func WSToTCPConnHandler(wsConn *websocket.Conn, tcpConn net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
+func WSConnectionHandler(wsConn *websocket.Conn, tcpConn net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
 	done := make(chan struct{})
 
 	go func() {
