@@ -338,7 +338,7 @@ func (s *TcpMuxTransport) handleMUXSession(acceptChan chan net.Conn, remoteAddr 
 			}
 			// Send the target port over the connection
 			if err := utils.SendBinaryString(stream, remoteAddr); err != nil {
-				s.logger.Errorf("Failed to send address %d over stream for session ID %d: %v", remoteAddr, id, err)
+				s.logger.Errorf("Failed to send address %v over stream for session ID %d: %v", remoteAddr, id, err)
 				incomingConn.Close()
 				continue
 			}
