@@ -88,7 +88,7 @@ func (m *Usage) Monitor() {
 
 		// Attempt to gracefully shut down the server
 		if err := m.server.Shutdown(shutdownCtx); err != nil {
-			m.logger.Error("sniffer server shutdown error: %v", err)
+			m.logger.Errorf("sniffer server shutdown error: %v", err)
 		}
 	}()
 
@@ -111,7 +111,7 @@ func (m *Usage) Monitor() {
 	// Start the server
 	m.logger.Info("sniffer service listening on port: ", m.listenAddr)
 	if err := m.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		m.logger.Error("sniffer server error: %v", err)
+		m.logger.Errorf("sniffer server error: %v", err)
 	}
 }
 
@@ -124,13 +124,13 @@ func (m *Usage) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	tmpl, err := template.ParseFS(indexHTML, "index.html")
 	if err != nil {
-		m.logger.Error("error parsing template: %v", err)
+		m.logger.Errorf("error parsing template: %v", err)
 		return
 	}
 
 	err = tmpl.Execute(w, readableData)
 	if err != nil {
-		m.logger.Error("error executing template: %v", err)
+		m.logger.Errorf("error executing template: %v", err)
 	}
 }
 
@@ -239,12 +239,31 @@ func (m *Usage) saveUsageData() {
 }
 
 func (m *Usage) getUsageFromFile() []PortUsage {
+	// Check if the file exists
+	if _, err := os.Stat(m.snifferLog); os.IsNotExist(err) {
+		// If the file does not exist, create it and write "null"
+		file, err := os.OpenFile(m.snifferLog, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+		if err != nil {
+			m.logger.Errorf("error creating file: %v", err)
+			return nil
+		}
+
+		// Write "null" to the new file
+		if _, err := file.Write([]byte("null")); err != nil {
+			m.logger.Errorf("error writing 'null' to the file: %v", err)
+			file.Close()
+			return nil
+		}
+
+		return nil
+	}
+
 	var usageData []PortUsage
 
 	// Open the JSON file
 	file, err := os.Open(m.snifferLog)
 	if err != nil {
-		m.logger.Error("error opening JSON file: %v", err)
+		m.logger.Errorf("error opening JSON file: %v", err)
 		return nil
 	}
 	defer file.Close()
@@ -252,7 +271,7 @@ func (m *Usage) getUsageFromFile() []PortUsage {
 	// Decode the JSON file into the usageData slice
 	err = json.NewDecoder(file).Decode(&usageData)
 	if err != nil {
-		m.logger.Error("error decoding JSON data: %v", err)
+		m.logger.Errorf("error decoding JSON data: %v", err)
 		return nil
 	}
 
