@@ -289,10 +289,9 @@ func (s *TcpTransport) channelListener() {
 			s.logger.Info("control channel successfully established.")
 
 			// call the functions
-			go s.getNewConnection()
+			go s.monitorControlChannel()
 			go s.heartbeat()
 			go s.portConfigReader()
-			go s.getClosedSignal()
 
 			s.config.TunnelStatus = "Connected (TCP)"
 
@@ -327,25 +326,24 @@ func (s *TcpTransport) heartbeat() {
 	}
 }
 
-func (s *TcpTransport) getClosedSignal() {
-	for {
-		// Channel to receive the message or error
-		resultChan := make(chan struct {
+func (s *TcpTransport) monitorControlChannel() {
+	// Channel to receive the message or error
+	resultChan := make(chan struct {
+		message string
+		err     error
+	})
+	go func() {
+		message, err := utils.ReceiveBinaryString(s.controlChannel)
+		resultChan <- struct {
 			message string
 			err     error
-		})
-		go func() {
-			message, err := utils.ReceiveBinaryString(s.controlChannel)
-			resultChan <- struct {
-				message string
-				err     error
-			}{message, err}
-		}()
+		}{message, err}
+	}()
 
+	for {
 		select {
 		case <-s.ctx.Done():
 			return
-
 		case result := <-resultChan:
 			if result.err != nil {
 				s.logger.Errorf("failed to receive message from tunnel connection: %v", result.err)
@@ -357,15 +355,6 @@ func (s *TcpTransport) getClosedSignal() {
 				go s.Restart()
 				return
 			}
-		}
-	}
-
-}
-func (s *TcpTransport) getNewConnection() {
-	for {
-		select {
-		case <-s.ctx.Done():
-			return
 
 		case <-s.getNewConnChan:
 			err := utils.SendBinaryString(s.controlChannel, s.chanSignal)
