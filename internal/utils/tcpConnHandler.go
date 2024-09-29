@@ -19,9 +19,6 @@ func TCPConnectionHandler(from net.Conn, to net.Conn, logger *logrus.Logger, usa
 	transferData(to, from, logger, usage, remotePort, sniffer)
 
 	<-done
-
-	from.Close()
-	to.Close()
 }
 
 // Using io.Copy for efficient data transfer

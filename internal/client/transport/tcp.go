@@ -233,7 +233,7 @@ func (c *TcpTransport) tunnelDialer() {
 		return
 	default:
 		if c.controlChannel == nil {
-			c.logger.Warn("No control channel found, cannot initiate tunnel dialer")
+			c.logger.Warn("No control channel found, returning from tunnel dialer")
 			return
 		}
 		c.logger.Debugf("initiating new connection to tunnel server at %s", c.config.RemoteAddr)
