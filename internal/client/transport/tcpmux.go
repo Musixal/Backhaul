@@ -24,17 +24,21 @@ type TcpMuxTransport struct {
 	cancel            context.CancelFunc
 	logger            *logrus.Logger
 	controlChannel    net.Conn
-	heartbeatSig      string
-	chanSignal        string
-	activeConnections int
 	usageMonitor      *web.Usage
 	activeMu          sync.Mutex
 	restartMutex      sync.Mutex
+	heartbeatSig      string
+	chanSignal        string
+	activeConnections int
 }
 
 type TcpMuxConfig struct {
 	RemoteAddr       string
+	Token            string
+	SnifferLog       string
+	TunnelStatus     string
 	Nodelay          bool
+	Sniffer          bool
 	KeepAlive        time.Duration
 	RetryInterval    time.Duration
 	DialTimeOut      time.Duration
@@ -43,11 +47,7 @@ type TcpMuxConfig struct {
 	MaxReceiveBuffer int
 	MaxStreamBuffer  int
 	ConnectionPool   int
-	Token            string
-	Sniffer          bool
 	WebPort          int
-	SnifferLog       string
-	TunnelStatus     string
 }
 
 func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logrus.Logger) *TcpMuxTransport {

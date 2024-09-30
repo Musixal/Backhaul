@@ -27,34 +27,35 @@ type WsMuxTransport struct {
 	cancel         context.CancelFunc
 	logger         *logrus.Logger
 	tunnelChannel  chan *websocket.Conn
-	controlChannel *websocket.Conn
 	getNewConnChan chan struct{}
-	heartbeatSig   string
-	chanSignal     string
+	controlChannel *websocket.Conn
 	usageMonitor   *web.Usage
 	restartMutex   sync.Mutex
+	heartbeatSig   string
+	chanSignal     string
 }
 
 type WsMuxConfig struct {
 	BindAddr         string
-	Nodelay          bool
-	KeepAlive        time.Duration
 	Token            string
-	ChannelSize      int
+	SnifferLog       string
+	TLSCertFile      string // Path to the TLS certificate file
+	TLSKeyFile       string // Path to the TLS key file
+	TunnelStatus     string
 	Ports            []string
+	Nodelay          bool
+	Sniffer          bool
+	KeepAlive        time.Duration
+	Heartbeat        time.Duration // in seconds
+	ChannelSize      int
 	MuxCon           int
 	MuxVersion       int
 	MaxFrameSize     int
 	MaxReceiveBuffer int
 	MaxStreamBuffer  int
-	Sniffer          bool
 	WebPort          int
-	SnifferLog       string
-	TLSCertFile      string               // Path to the TLS certificate file
-	TLSKeyFile       string               // Path to the TLS key file
 	Mode             config.TransportType // ws or wss
-	Heartbeat        time.Duration        // in seconds
-	TunnelStatus     string
+
 }
 
 func NewWSMuxServer(parentCtx context.Context, config *WsMuxConfig, logger *logrus.Logger) *WsMuxTransport {

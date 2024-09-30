@@ -30,16 +30,20 @@ type WsMuxTransport struct {
 	cancel            context.CancelFunc
 	logger            *logrus.Logger
 	controlChannel    *websocket.Conn
-	heartbeatSig      string
-	chanSignal        string
-	activeConnections int
 	usageMonitor      *web.Usage
 	activeMu          sync.Mutex
 	restartMutex      sync.Mutex
+	heartbeatSig      string
+	chanSignal        string
+	activeConnections int
 }
 type WsMuxConfig struct {
 	RemoteAddr       string
+	Token            string
+	SnifferLog       string
+	TunnelStatus     string
 	Nodelay          bool
+	Sniffer          bool
 	KeepAlive        time.Duration
 	RetryInterval    time.Duration
 	DialTimeOut      time.Duration
@@ -48,12 +52,8 @@ type WsMuxConfig struct {
 	MaxReceiveBuffer int
 	MaxStreamBuffer  int
 	ConnectionPool   int
-	Token            string
-	Sniffer          bool
 	WebPort          int
-	SnifferLog       string
 	Mode             config.TransportType
-	TunnelStatus     string
 }
 
 func NewWSMuxClient(parentCtx context.Context, config *WsMuxConfig, logger *logrus.Logger) *WsMuxTransport {

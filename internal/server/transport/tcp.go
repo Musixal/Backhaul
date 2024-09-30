@@ -24,23 +24,23 @@ type TcpTransport struct {
 	tunnelChannel  chan net.Conn
 	controlChannel net.Conn
 	restartMutex   sync.Mutex
+	usageMonitor   *web.Usage
 	heartbeatSig   string
 	chanSignal     string
-	usageMonitor   *web.Usage
 }
 
 type TcpConfig struct {
 	BindAddr     string
-	Nodelay      bool
-	KeepAlive    time.Duration
 	Token        string
-	ChannelSize  int
-	Ports        []string
-	Sniffer      bool
-	WebPort      int
 	SnifferLog   string
-	Heartbeat    time.Duration // in seconds
 	TunnelStatus string
+	Ports        []string
+	Nodelay      bool
+	Sniffer      bool
+	KeepAlive    time.Duration
+	Heartbeat    time.Duration // in seconds
+	ChannelSize  int
+	WebPort      int
 }
 
 func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.Logger) *TcpTransport {

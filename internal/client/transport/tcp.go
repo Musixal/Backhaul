@@ -24,25 +24,25 @@ type TcpTransport struct {
 	cancel            context.CancelFunc
 	logger            *logrus.Logger
 	controlChannel    net.Conn
+	usageMonitor      *web.Usage
 	restartMutex      sync.Mutex
+	activeMu          sync.Mutex
 	heartbeatSig      string
 	chanSignal        string
-	usageMonitor      *web.Usage
 	activeConnections int
-	activeMu          sync.Mutex
 }
 type TcpConfig struct {
 	RemoteAddr     string
-	Nodelay        bool
+	Token          string
+	SnifferLog     string
+	TunnelStatus   string
 	KeepAlive      time.Duration
 	RetryInterval  time.Duration
 	DialTimeOut    time.Duration
 	ConnectionPool int
-	Token          string
-	Sniffer        bool
 	WebPort        int
-	SnifferLog     string
-	TunnelStatus   string
+	Nodelay        bool
+	Sniffer        bool
 }
 
 func NewTCPClient(parentCtx context.Context, config *TcpConfig, logger *logrus.Logger) *TcpTransport {

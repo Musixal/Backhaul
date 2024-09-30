@@ -28,27 +28,28 @@ type WsTransport struct {
 	getNewConnChan chan struct{}
 	controlChannel *websocket.Conn
 	restartMutex   sync.Mutex
-	heartbeatSig   string
-	chanSignal     string
 	chanMu         sync.Mutex
 	usageMonitor   *web.Usage
+	heartbeatSig   string
+	chanSignal     string
 }
 
 type WsConfig struct {
 	BindAddr     string
-	Nodelay      bool
-	KeepAlive    time.Duration
-	Token        string
-	ChannelSize  int
-	Ports        []string
-	Sniffer      bool
-	WebPort      int
 	SnifferLog   string
-	TLSCertFile  string               // Path to the TLS certificate file
-	TLSKeyFile   string               // Path to the TLS key file
-	Mode         config.TransportType // ws or wss
-	Heartbeat    time.Duration        // in seconds
+	TLSCertFile  string // Path to the TLS certificate file
+	TLSKeyFile   string // Path to the TLS key file
 	TunnelStatus string
+	Token        string
+	Ports        []string
+	Nodelay      bool
+	Sniffer      bool
+	KeepAlive    time.Duration
+	Heartbeat    time.Duration // in seconds
+	ChannelSize  int
+	WebPort      int
+	Mode         config.TransportType // ws or wss
+
 }
 
 type TunnelChannel struct {

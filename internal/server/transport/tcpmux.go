@@ -25,29 +25,30 @@ type TcpMuxTransport struct {
 	logger         *logrus.Logger
 	tunnelChannel  chan net.Conn
 	controlChannel net.Conn
-	heartbeatSig   string
-	chanSignal     string
 	usageMonitor   *web.Usage
 	restartMutex   sync.Mutex
+	heartbeatSig   string
+	chanSignal     string
 }
 
 type TcpMuxConfig struct {
 	BindAddr         string
-	Nodelay          bool
-	KeepAlive        time.Duration
+	TunnelStatus     string
+	SnifferLog       string
 	Token            string
-	ChannelSize      int
 	Ports            []string
+	Nodelay          bool
+	Sniffer          bool
+	ChannelSize      int
 	MuxCon           int
 	MuxVersion       int
 	MaxFrameSize     int
 	MaxReceiveBuffer int
 	MaxStreamBuffer  int
-	Sniffer          bool
 	WebPort          int
-	SnifferLog       string
+	KeepAlive        time.Duration
 	Heartbeat        time.Duration // in seconds
-	TunnelStatus     string
+
 }
 
 func NewTcpMuxServer(parentCtx context.Context, config *TcpMuxConfig, logger *logrus.Logger) *TcpMuxTransport {

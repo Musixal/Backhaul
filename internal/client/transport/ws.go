@@ -29,25 +29,25 @@ type WsTransport struct {
 	logger            *logrus.Logger
 	controlChannel    *websocket.Conn
 	restartMutex      sync.Mutex
+	activeMu          sync.Mutex
+	usageMonitor      *web.Usage
 	heartbeatSig      string
 	chanSignal        string
-	usageMonitor      *web.Usage
 	activeConnections int
-	activeMu          sync.Mutex
 }
 type WsConfig struct {
 	RemoteAddr     string
+	Token          string
+	SnifferLog     string
+	TunnelStatus   string
 	Nodelay        bool
+	Sniffer        bool
 	KeepAlive      time.Duration
 	RetryInterval  time.Duration
 	DialTimeOut    time.Duration
 	ConnectionPool int
-	Token          string
-	Sniffer        bool
 	WebPort        int
-	SnifferLog     string
 	Mode           config.TransportType
-	TunnelStatus   string
 }
 
 func NewWSClient(parentCtx context.Context, config *WsConfig, logger *logrus.Logger) *WsTransport {
