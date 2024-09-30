@@ -17,14 +17,19 @@ import (
 )
 
 type TcpMuxTransport struct {
-	config       *TcpMuxConfig
-	parentctx    context.Context
-	ctx          context.Context
-	cancel       context.CancelFunc
-	logger       *logrus.Logger
-	smuxSession  []*smux.Session
-	restartMutex sync.Mutex
-	usageMonitor *web.Usage
+	config            *TcpMuxConfig
+	smuxConfig        *smux.Config
+	parentctx         context.Context
+	ctx               context.Context
+	cancel            context.CancelFunc
+	logger            *logrus.Logger
+	controlChannel    net.Conn
+	heartbeatSig      string
+	chanSignal        string
+	activeConnections int
+	usageMonitor      *web.Usage
+	activeMu          sync.Mutex
+	restartMutex      sync.Mutex
 }
 
 type TcpMuxConfig struct {
@@ -33,12 +38,12 @@ type TcpMuxConfig struct {
 	KeepAlive        time.Duration
 	RetryInterval    time.Duration
 	DialTimeOut      time.Duration
-	Token            string
-	MuxSession       int
 	MuxVersion       int
 	MaxFrameSize     int
 	MaxReceiveBuffer int
 	MaxStreamBuffer  int
+	ConnectionPool   int
+	Token            string
 	Sniffer          bool
 	WebPort          int
 	SnifferLog       string
@@ -51,13 +56,25 @@ func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logru
 
 	// Initialize the TcpTransport struct
 	client := &TcpMuxTransport{
-		config:       config,
-		parentctx:    parentCtx,
-		ctx:          ctx,
-		cancel:       cancel,
-		logger:       logger,
-		smuxSession:  make([]*smux.Session, config.MuxSession),
-		usageMonitor: web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
+		smuxConfig: &smux.Config{
+			Version:           config.MuxVersion,
+			KeepAliveInterval: 10 * time.Second,
+			KeepAliveTimeout:  30 * time.Second,
+			MaxFrameSize:      config.MaxFrameSize,
+			MaxReceiveBuffer:  config.MaxReceiveBuffer,
+			MaxStreamBuffer:   config.MaxStreamBuffer,
+		},
+		config:            config,
+		parentctx:         parentCtx,
+		ctx:               ctx,
+		cancel:            cancel,
+		logger:            logger,
+		controlChannel:    nil, // will be set when a control connection is established
+		heartbeatSig:      "0", // Default heartbeat signal
+		chanSignal:        "1", // Default channel signal
+		activeConnections: 0,
+		activeMu:          sync.Mutex{},
+		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
 	return client
@@ -82,106 +99,234 @@ func (c *TcpMuxTransport) Restart() {
 	c.cancel = cancel
 
 	// Re-initialize variables
-	c.smuxSession = make([]*smux.Session, c.config.MuxSession)
+	c.controlChannel = nil
 	c.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.config.Sniffer, &c.config.TunnelStatus, c.logger)
 	c.config.TunnelStatus = ""
+	c.activeConnections = 0
+	c.activeMu = sync.Mutex{}
 
-	go c.MuxDialer()
+	go c.ChannelDialer()
 
 }
 
-func (c *TcpMuxTransport) MuxDialer() {
+func (c *TcpMuxTransport) ChannelDialer() {
 	// for  webui
 	if c.config.WebPort > 0 {
 		go c.usageMonitor.Monitor()
 	}
 
 	c.config.TunnelStatus = "Disconnected (TCPMux)"
+	c.logger.Info("attempting to establish a new tcpmux control channel connection...")
 
-	for id := 0; id < c.config.MuxSession; id++ {
-	innerloop:
-		for {
-			select {
-			case <-c.ctx.Done():
-				return
-			default:
-				c.logger.Debugf("initiating new mux session to address %s (session ID: %d)", c.config.RemoteAddr, id)
-				// Dial to the tunnel server
-				tunnelTCPConn, err := c.tcpDialer(c.config.RemoteAddr, c.config.Nodelay)
-				if err != nil {
-					c.logger.Errorf("failed to dial tunnel server at %s: %v", c.config.RemoteAddr, err)
-					time.Sleep(c.config.RetryInterval)
-					continue
-				}
-
-				// config fot smux
-				config := smux.Config{
-					Version:           c.config.MuxVersion, // Smux protocol version
-					KeepAliveInterval: 10 * time.Second,    // Shorter keep-alive interval to quickly detect dead peers
-					KeepAliveTimeout:  30 * time.Second,    // Aggressive timeout to handle unresponsive connections
-					MaxFrameSize:      c.config.MaxFrameSize,
-					MaxReceiveBuffer:  c.config.MaxReceiveBuffer,
-					MaxStreamBuffer:   c.config.MaxStreamBuffer,
-				}
-
-				// SMUX server
-				session, err := smux.Server(tunnelTCPConn, &config)
-				if err != nil {
-					c.logger.Errorf("failed to create mux session: %v", err)
-					continue
-				}
-				// auth
-				stream, err := session.OpenStream()
-				if err != nil {
-					c.logger.Errorf("unable to open a new mux stream for auth: %v", err)
-					session.Close()
-					continue
-				}
-
-				err = utils.SendBinaryString(stream, c.config.Token)
-				if err != nil {
-					c.logger.Errorf("failed to send token: %v", err)
-					session.Close()
-					continue
-				}
-
-				msg, err := utils.ReceiveBinaryString(stream)
-				if err == nil && msg == "ok" {
-					c.smuxSession[id] = session
-					c.logger.Infof("Mux session established successfully (session ID: %d)", id)
-					go c.handleMUXStreams(id)
-					break innerloop
-				} else {
-					c.logger.Errorf("failed to establish a new session. Token error or unexpected response: %v", err)
-				}
-
-			}
-		}
-	}
-
-	c.config.TunnelStatus = "Connected (TCPMux)"
-}
-
-func (c *TcpMuxTransport) handleMUXStreams(id int) {
+loop:
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
 		default:
-			stream, err := c.smuxSession[id].AcceptStream()
+			tunnelConn, err := c.tcpDialer(c.config.RemoteAddr)
 			if err != nil {
-				c.logger.Errorf("failed to accept mux stream for session ID %d: %v", id, err)
-				c.logger.Info("attempting to restart client...")
+				c.logger.Errorf("tcpmux channel dialer: error dialing remote address %s: %v", c.config.RemoteAddr, err)
+				time.Sleep(c.config.RetryInterval)
+				continue
+			}
+
+			// Sending security token
+			err = utils.SendBinaryString(tunnelConn, c.config.Token)
+			if err != nil {
+				c.logger.Errorf("failed to send security token: %v", err)
+				tunnelConn.Close()
+				continue loop
+			}
+
+			// Set a read deadline for the token response
+			if err := tunnelConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+				c.logger.Errorf("failed to set read deadline: %v", err)
+				tunnelConn.Close()
+				continue loop
+			}
+			// Receive response
+			message, err := utils.ReceiveBinaryString(tunnelConn)
+			if err != nil {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					c.logger.Warn("timeout while waiting for control channel response")
+				} else {
+					c.logger.Errorf("failed to receive control channel response: %v", err)
+				}
+				tunnelConn.Close() // Close connection on error or timeout
+				time.Sleep(c.config.RetryInterval)
+				continue loop
+			}
+			// Resetting the deadline (removes any existing deadline)
+			tunnelConn.SetReadDeadline(time.Time{})
+
+			if message == c.config.Token {
+				c.controlChannel = tunnelConn
+				c.logger.Info("tcpmux control channel established successfully")
+
+				c.config.TunnelStatus = "Connected (TCPMux)"
+				go c.channelListener()
+				go c.poolChecker()
+				break loop // break the loop
+			} else {
+				c.logger.Errorf("invalid token received. Expected: %s, Received: %s. Retrying...", c.config.Token, message)
+				tunnelConn.Close() // Close connection if the token is invalid
+				time.Sleep(c.config.RetryInterval)
+				continue loop
+			}
+		}
+	}
+
+	<-c.ctx.Done()
+
+	c.closeControlChannel("context cancellation")
+}
+
+func (c *TcpMuxTransport) closeControlChannel(reason string) {
+	if c.controlChannel != nil {
+		_ = utils.SendBinaryString(c.controlChannel, "closed")
+		c.controlChannel.Close()
+		c.logger.Debugf("control channel closed due to %s", reason)
+	}
+}
+
+func (c *TcpMuxTransport) channelListener() {
+	msgChan := make(chan string, 100)
+	errChan := make(chan error, 100)
+
+	// Goroutine to handle the blocking ReceiveBinaryString
+	go func() {
+		for {
+			msg, err := utils.ReceiveBinaryString(c.controlChannel)
+			if err != nil {
+				errChan <- err
+				return
+			}
+			msgChan <- msg
+		}
+	}()
+
+	// Main loop to listen for context cancellation or received messages
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case msg := <-msgChan:
+			switch msg {
+			case c.chanSignal:
+				c.logger.Debug("channel signal received, initiating tunnel dialer")
+				go c.tunnelDialer()
+			case c.heartbeatSig:
+				c.logger.Debug("heartbeat signal received successfully")
+			default:
+				c.logger.Errorf("unexpected response from channel: %s. Restarting client...", msg)
 				go c.Restart()
 				return
-
 			}
-			go c.handleTCPSession(stream)
+		case err := <-errChan:
+			// Handle errors from the control channel
+			c.logger.Error("error receiving channel signal, restarting client: ", err)
+			go c.Restart()
+			return
 		}
 	}
 }
 
-func (c *TcpMuxTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPConn, error) {
+func (c *TcpMuxTransport) tunnelDialer() {
+	c.activeMu.Lock()
+	c.activeConnections++
+	c.activeMu.Unlock()
+
+	if c.controlChannel == nil {
+		c.logger.Warn("wsmux control channel is nil, cannot dial tunnel. Restarting client...")
+		go c.Restart()
+		return
+	}
+	c.logger.Debugf("initiating new wsmux tunnel connection to address %s", c.config.RemoteAddr)
+
+	tunnelConn, err := c.tcpDialer(c.config.RemoteAddr)
+	if err != nil {
+		c.logger.Errorf("failed to dial wsmux tunnel server: %v", err)
+		c.activeMu.Lock()
+		c.activeConnections--
+		c.activeMu.Unlock()
+		return
+	}
+	c.handleTunnelConn(tunnelConn)
+}
+
+func (c *TcpMuxTransport) handleTunnelConn(tunnelConn net.Conn) {
+	defer func() {
+		c.activeMu.Lock()
+		c.activeConnections--
+		c.activeMu.Unlock()
+	}()
+
+	// SMUX server
+	session, err := smux.Server(tunnelConn, c.smuxConfig)
+	if err != nil {
+		c.logger.Errorf("failed to create mux session: %v", err)
+		return
+	}
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		default:
+			stream, err := session.AcceptStream()
+			if err != nil {
+				c.logger.Trace("session is closed: ", err)
+				return
+			}
+
+			remoteAddr, err := utils.ReceiveBinaryString(stream)
+			if err != nil {
+				c.logger.Errorf("unable to get port from websocket connection %s: %v", tunnelConn.RemoteAddr().String(), err)
+				if err := session.Close(); err != nil {
+					c.logger.Errorf("failed to close mux stream due to recievebinarystring: %v", err)
+				}
+				tunnelConn.Close()
+				return
+			}
+			go c.localDialer(stream, remoteAddr)
+		}
+	}
+}
+
+func (c *TcpMuxTransport) localDialer(stream *smux.Stream, remoteAddr string) {
+	// Extract the port
+	parts := strings.Split(remoteAddr, ":")
+	var port int
+	var err error
+	if len(parts) < 2 {
+		port, err = strconv.Atoi(parts[0])
+		if err != nil {
+			c.logger.Info("failed to find the remote port, ", err)
+			stream.Close()
+			return
+		}
+		remoteAddr = fmt.Sprintf("127.0.0.1:%d", port)
+	} else {
+		port, err = strconv.Atoi(parts[1])
+		if err != nil {
+			c.logger.Info("failed to find the remote port, ", err)
+			stream.Close()
+			return
+		}
+	}
+	localConnection, err := c.tcpDialer(remoteAddr)
+	if err != nil {
+		c.logger.Errorf("connecting to local address %s is not possible", remoteAddr)
+		stream.Close()
+		return
+	}
+
+	c.logger.Debugf("connected to local address %s successfully", remoteAddr)
+	utils.TCPConnectionHandler(stream, localConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffer)
+}
+
+func (c *TcpMuxTransport) tcpDialer(address string) (*net.TCPConn, error) {
 	// Resolve the address to a TCP address
 	tcpAddr, err := net.ResolveTCPAddr("tcp", address)
 	if err != nil {
@@ -207,7 +352,7 @@ func (c *TcpMuxTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPCo
 		return nil, fmt.Errorf("failed to convert net.Conn to *net.TCPConn")
 	}
 
-	if !tcpnodelay {
+	if !c.config.Nodelay {
 		err = tcpConn.SetNoDelay(false)
 		if err != nil {
 			tcpConn.Close()
@@ -218,56 +363,27 @@ func (c *TcpMuxTransport) tcpDialer(address string, tcpnodelay bool) (*net.TCPCo
 	return tcpConn, nil
 }
 
-func (c *TcpMuxTransport) handleTCPSession(tcpsession net.Conn) {
-	select {
-	case <-c.ctx.Done():
-		return
-	default:
-		remoteAddr, err := utils.ReceiveBinaryString(tcpsession)
+func (c *TcpMuxTransport) poolChecker() {
+	ticker := time.NewTicker(time.Millisecond * 350)
+	defer ticker.Stop()
 
-		if err != nil {
-			c.logger.Tracef("unable to get the port from the %s connection: %v", tcpsession.RemoteAddr().String(), err)
-			tcpsession.Close()
+	for {
+		select {
+		case <-c.ctx.Done():
 			return
+
+		case <-ticker.C:
+			c.logger.Tracef("active connections: %d", c.activeConnections)
+			if c.activeConnections < c.config.ConnectionPool/2 {
+				neededConn := c.config.ConnectionPool - c.activeConnections
+				for i := 0; i < neededConn; i++ {
+					go c.tunnelDialer()
+				}
+
+			}
+
 		}
-		go c.localDialer(tcpsession, remoteAddr)
 
 	}
-}
 
-func (c *TcpMuxTransport) localDialer(tunnelConnection net.Conn, remoteAddr string) {
-	select {
-	case <-c.ctx.Done():
-		return
-	default:
-		// Extract the port
-		parts := strings.Split(remoteAddr, ":")
-		var port int
-		var err error
-		if len(parts) < 2 {
-			port, err = strconv.Atoi(parts[0])
-			if err != nil {
-				c.logger.Info("failed to find the remote port, ", err)
-				tunnelConnection.Close()
-				return
-			}
-			remoteAddr = fmt.Sprintf("127.0.0.1:%d", port)
-		} else {
-			port, err = strconv.Atoi(parts[1])
-			if err != nil {
-				c.logger.Info("failed to find the remote port, ", err)
-				tunnelConnection.Close()
-				return
-			}
-		}
-
-		localConnection, err := c.tcpDialer(remoteAddr, c.config.Nodelay)
-		if err != nil {
-			c.logger.Errorf("failed to connect to local address %s: %v", remoteAddr, err)
-			tunnelConnection.Close()
-			return
-		}
-		c.logger.Debugf("connected to local address %s successfully", remoteAddr)
-		go utils.TCPConnectionHandler(localConnection, tunnelConnection, c.logger, c.usageMonitor, port, c.config.Sniffer)
-	}
 }

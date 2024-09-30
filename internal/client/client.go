@@ -68,8 +68,8 @@ func (c *Client) Start() {
 			Nodelay:          c.config.Nodelay,
 			KeepAlive:        time.Duration(c.config.Keepalive) * time.Second,
 			RetryInterval:    time.Duration(c.config.RetryInterval) * time.Second,
+			ConnectionPool:   c.config.ConnectionPool,
 			Token:            c.config.Token,
-			MuxSession:       c.config.MuxSession,
 			MuxVersion:       c.config.MuxVersion,
 			MaxFrameSize:     c.config.MaxFrameSize,
 			MaxReceiveBuffer: c.config.MaxReceiveBuffer,
@@ -80,15 +80,15 @@ func (c *Client) Start() {
 			DialTimeOut:      time.Duration(c.config.DialTimeout) * time.Second,
 		}
 		tcpMuxClient := transport.NewMuxClient(c.ctx, tcpMuxConfig, c.logger)
-		go tcpMuxClient.MuxDialer()
+		go tcpMuxClient.ChannelDialer()
 
 	} else if c.config.Transport == config.WS || c.config.Transport == config.WSS {
 		WsConfig := &transport.WsConfig{
 			RemoteAddr:     c.config.RemoteAddr,
 			Nodelay:        c.config.Nodelay,
-			ConnectionPool: c.config.ConnectionPool,
 			KeepAlive:      time.Duration(c.config.Keepalive) * time.Second,
 			RetryInterval:  time.Duration(c.config.RetryInterval) * time.Second,
+			ConnectionPool: c.config.ConnectionPool,
 			Token:          c.config.Token,
 			Sniffer:        c.config.Sniffer,
 			WebPort:        c.config.WebPort,
@@ -105,7 +105,6 @@ func (c *Client) Start() {
 			KeepAlive:        time.Duration(c.config.Keepalive) * time.Second,
 			RetryInterval:    time.Duration(c.config.RetryInterval) * time.Second,
 			Token:            c.config.Token,
-			MuxSession:       c.config.MuxSession,
 			MuxVersion:       c.config.MuxVersion,
 			MaxFrameSize:     c.config.MaxFrameSize,
 			MaxReceiveBuffer: c.config.MaxReceiveBuffer,
@@ -115,9 +114,10 @@ func (c *Client) Start() {
 			SnifferLog:       c.config.SnifferLog,
 			Mode:             c.config.Transport,
 			DialTimeOut:      time.Duration(c.config.DialTimeout) * time.Second,
+			ConnectionPool:   c.config.ConnectionPool,
 		}
 		wsMuxClient := transport.NewWSMuxClient(c.ctx, wsMuxConfig, c.logger)
-		go wsMuxClient.MuxDialer()
+		go wsMuxClient.ChannelDialer()
 
 	} else {
 		c.logger.Fatal("invalid transport type: ", c.config.Transport)

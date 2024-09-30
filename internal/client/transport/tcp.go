@@ -107,7 +107,7 @@ func (c *TcpTransport) ChannelDialer() {
 	c.config.TunnelStatus = "Disconnected (TCP)"
 	c.logger.Info("attempting to establish a new control channel connection...")
 
-connectLoop:
+loop:
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -125,14 +125,14 @@ connectLoop:
 			if err != nil {
 				c.logger.Errorf("failed to send security token: %v", err)
 				tunnelTCPConn.Close()
-				continue connectLoop
+				continue loop
 			}
 
 			// Set a read deadline for the token response
 			if err := tunnelTCPConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
 				c.logger.Errorf("failed to set read deadline: %v", err)
 				tunnelTCPConn.Close()
-				continue connectLoop
+				continue loop
 			}
 			// Receive response
 			message, err := utils.ReceiveBinaryString(tunnelTCPConn)
@@ -144,7 +144,7 @@ connectLoop:
 				}
 				tunnelTCPConn.Close() // Close connection on error or timeout
 				time.Sleep(c.config.RetryInterval)
-				continue connectLoop
+				continue loop
 			}
 			// Resetting the deadline (removes any existing deadline)
 			tunnelTCPConn.SetReadDeadline(time.Time{})
@@ -156,25 +156,26 @@ connectLoop:
 				c.config.TunnelStatus = "Connected (TCP)"
 				go c.channelListener()
 				go c.poolChecker()
-				break connectLoop // break the loop
+				break loop // break the loop
 			} else {
 				c.logger.Errorf("invalid token received. Expected: %s, Received: %s. Retrying...", c.config.Token, message)
 				tunnelTCPConn.Close() // Close connection if the token is invalid
 				time.Sleep(c.config.RetryInterval)
-				continue connectLoop
+				continue loop
 			}
 		}
 	}
 
 	<-c.ctx.Done()
-	go c.closeControlChannel("context cancellation")
+
+	c.closeControlChannel("context cancellation")
 }
 
 func (c *TcpTransport) closeControlChannel(reason string) {
 	if c.controlChannel != nil {
 		_ = utils.SendBinaryString(c.controlChannel, "closed")
 		c.controlChannel.Close()
-		c.logger.Infof("control channel closed due to %s", reason)
+		c.logger.Debugf("control channel closed due to %s", reason)
 	}
 }
 
@@ -198,14 +199,12 @@ func (c *TcpTransport) channelListener() {
 	for {
 		select {
 		case <-c.ctx.Done():
-			c.logger.Debug("context done, stopping channel listener")
 			return
 		case msg := <-msgChan:
 			switch msg {
 			case c.chanSignal:
 				c.logger.Debug("channel signal received, initiating tunnel dialer")
 				go c.tunnelDialer()
-
 			case c.heartbeatSig:
 				c.logger.Debug("heartbeat signal received successfully")
 			default:
@@ -228,87 +227,67 @@ func (c *TcpTransport) tunnelDialer() {
 	c.activeConnections++
 	c.activeMu.Unlock()
 
-	select {
-	case <-c.ctx.Done():
-		return
-	default:
-		if c.controlChannel == nil {
-			c.logger.Warn("No control channel found, returning from tunnel dialer")
-			return
-		}
-		c.logger.Debugf("initiating new connection to tunnel server at %s", c.config.RemoteAddr)
+	c.logger.Debugf("initiating new connection to tunnel server at %s", c.config.RemoteAddr)
 
-		// Dial to the tunnel server
-		tunnelTCPConn, err := c.tcpDialer(c.config.RemoteAddr)
-		if err != nil {
-			c.logger.Error("failed to dial tunnel server: ", err)
-			c.activeMu.Lock()
-			c.activeConnections--
-			c.activeMu.Unlock()
-			return
-		}
-		go c.handleTCPSession(tunnelTCPConn)
-	}
-}
-
-func (c *TcpTransport) handleTCPSession(tcpsession net.Conn) {
-	defer func() {
+	// Dial to the tunnel server
+	tcpConn, err := c.tcpDialer(c.config.RemoteAddr)
+	if err != nil {
+		c.logger.Error("failed to dial tunnel server: ", err)
 		c.activeMu.Lock()
 		c.activeConnections--
 		c.activeMu.Unlock()
-	}()
-
-	select {
-	case <-c.ctx.Done():
 		return
-	default:
-		remoteAddr, err := utils.ReceiveBinaryString(tcpsession)
-		if err != nil {
-			c.logger.Debugf("failed to receive port from tunnel connection %s: %v", tcpsession.RemoteAddr().String(), err)
-			tcpsession.Close()
-			return
-		}
-		go c.localDialer(tcpsession, remoteAddr)
-
 	}
+	c.handleTCPConn(tcpConn)
 }
 
-func (c *TcpTransport) localDialer(tunnelConnection net.Conn, remoteAddr string) {
-	select {
-	case <-c.ctx.Done():
-		return
-	default:
-		// Extract the port
-		parts := strings.Split(remoteAddr, ":")
-		var port int
-		var err error
-		if len(parts) < 2 {
-			port, err = strconv.Atoi(parts[0])
-			if err != nil {
-				c.logger.Info("failed to find the remote port, ", err)
-				tunnelConnection.Close()
-				return
-			}
-			remoteAddr = fmt.Sprintf("127.0.0.1:%d", port)
-		} else {
-			port, err = strconv.Atoi(parts[1])
-			if err != nil {
-				c.logger.Info("failed to find the remote port, ", err)
-				tunnelConnection.Close()
-				return
-			}
-		}
+func (c *TcpTransport) handleTCPConn(tcpConn net.Conn) {
+	remoteAddr, err := utils.ReceiveBinaryString(tcpConn)
 
-		localConnection, err := c.tcpDialer(remoteAddr)
+	c.activeMu.Lock()
+	c.activeConnections--
+	c.activeMu.Unlock()
+
+	if err != nil {
+		c.logger.Debugf("failed to receive port from tunnel connection %s: %v", tcpConn.RemoteAddr().String(), err)
+		tcpConn.Close()
+		return
+	}
+	c.localDialer(tcpConn, remoteAddr)
+}
+
+func (c *TcpTransport) localDialer(tcpConn net.Conn, remoteAddr string) {
+	// Extract the port
+	parts := strings.Split(remoteAddr, ":")
+	var port int
+	var err error
+	if len(parts) < 2 {
+		port, err = strconv.Atoi(parts[0])
 		if err != nil {
-			c.logger.Errorf("failed to connect to local address %s: %v", remoteAddr, err)
-			tunnelConnection.Close()
+			c.logger.Info("failed to find the remote port, ", err)
+			tcpConn.Close()
 			return
 		}
-
-		c.logger.Debugf("connected to local address %s successfully", remoteAddr)
-		go utils.TCPConnectionHandler(localConnection, tunnelConnection, c.logger, c.usageMonitor, port, c.config.Sniffer)
+		remoteAddr = fmt.Sprintf("127.0.0.1:%d", port)
+	} else {
+		port, err = strconv.Atoi(parts[1])
+		if err != nil {
+			c.logger.Info("failed to find the remote port, ", err)
+			tcpConn.Close()
+			return
+		}
 	}
+
+	localConnection, err := c.tcpDialer(remoteAddr)
+	if err != nil {
+		c.logger.Errorf("failed to connect to local address %s: %v", remoteAddr, err)
+		tcpConn.Close()
+		return
+	}
+
+	c.logger.Debugf("connected to local address %s successfully", remoteAddr)
+
+	utils.TCPConnectionHandler(localConnection, tcpConn, c.logger, c.usageMonitor, port, c.config.Sniffer)
 }
 
 func (c *TcpTransport) tcpDialer(address string) (*net.TCPConn, error) {
@@ -367,7 +346,6 @@ func (c *TcpTransport) poolChecker() {
 				neededConn := c.config.ConnectionPool - c.activeConnections
 				for i := 0; i < neededConn; i++ {
 					go c.tunnelDialer()
-					time.Sleep(time.Millisecond * 10)
 				}
 
 			}

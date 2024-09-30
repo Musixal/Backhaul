@@ -16,19 +16,18 @@ import (
 )
 
 type TcpTransport struct {
-	config            *TcpConfig
-	parentctx         context.Context
-	ctx               context.Context
-	cancel            context.CancelFunc
-	logger            *logrus.Logger
-	localChannel      chan LocalConn
-	controlChannel    net.Conn
-	restartMutex      sync.Mutex
-	timeout           time.Duration
-	heartbeatDuration time.Duration
-	heartbeatSig      string
-	chanSignal        string
-	usageMonitor      *web.Usage
+	config         *TcpConfig
+	parentctx      context.Context
+	ctx            context.Context
+	cancel         context.CancelFunc
+	logger         *logrus.Logger
+	tunnelChannel  chan net.Conn
+	controlChannel net.Conn
+	restartMutex   sync.Mutex
+	timeout        time.Duration
+	heartbeatSig   string
+	chanSignal     string
+	usageMonitor   *web.Usage
 }
 
 type TcpConfig struct {
@@ -41,13 +40,8 @@ type TcpConfig struct {
 	Sniffer      bool
 	WebPort      int
 	SnifferLog   string
-	Heartbeat    int // in seconds
+	Heartbeat    time.Duration // in seconds
 	TunnelStatus string
-}
-
-type LocalConn struct {
-	conn       net.Conn
-	remoteAddr string
 }
 
 func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.Logger) *TcpTransport {
@@ -56,18 +50,16 @@ func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 
 	// Initialize the TcpTransport struct
 	server := &TcpTransport{
-		config:            config,
-		parentctx:         parentCtx,
-		ctx:               ctx,
-		cancel:            cancel,
-		logger:            logger,
-		localChannel:      make(chan LocalConn, config.ChannelSize),
-		controlChannel:    nil,                                           // will be set when a control connection is established
-		timeout:           30 * time.Second,                              // Default timeout for waiting for a tunnel connection
-		heartbeatDuration: time.Duration(config.Heartbeat) * time.Second, // Heartbeat duration
-		heartbeatSig:      "0",                                           // Default heartbeat signal
-		chanSignal:        "1",                                           // Default channel signal
-		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
+		config:         config,
+		parentctx:      parentCtx,
+		ctx:            ctx,
+		cancel:         cancel,
+		logger:         logger,
+		tunnelChannel:  make(chan net.Conn, config.ChannelSize),
+		controlChannel: nil, // will be set when a control connection is established
+		heartbeatSig:   "0", // Default heartbeat signal
+		chanSignal:     "1", // Default channel signal
+		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
 	return server
@@ -95,7 +87,7 @@ func (s *TcpTransport) Restart() {
 	s.cancel = cancel
 
 	// Re-initialize variables
-	s.localChannel = make(chan LocalConn, s.config.ChannelSize)
+	s.tunnelChannel = make(chan net.Conn, s.config.ChannelSize)
 	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.config.Sniffer, &s.config.TunnelStatus, s.logger)
 	s.config.TunnelStatus = ""
 	s.controlChannel = nil
@@ -198,11 +190,19 @@ func (s *TcpTransport) TunnelListener() {
 					go s.channelHandshake(conn)
 					continue
 				}
-				go s.handleTunnelConn(conn)
+
+				select {
+				case s.tunnelChannel <- conn:
+				default: // The channel is full, do nothing
+					s.logger.Warn("tunnel channel is full, discard the connection")
+					conn.Close()
+				}
 			}
 		}
 	}()
 	<-s.ctx.Done()
+
+	close(s.tunnelChannel)
 }
 
 func (s *TcpTransport) channelHandshake(conn net.Conn) {
@@ -243,15 +243,28 @@ func (s *TcpTransport) channelHandshake(conn net.Conn) {
 
 	// call the functions
 	go s.monitorControlChannel()
-	go s.heartbeat()
 	go s.portConfigReader()
 
 	s.config.TunnelStatus = "Connected (TCP)"
 }
 
-func (s *TcpTransport) heartbeat() {
-	ticker := time.NewTicker(s.heartbeatDuration)
+func (s *TcpTransport) monitorControlChannel() {
+	ticker := time.NewTicker(s.config.Heartbeat)
 	defer ticker.Stop()
+
+	// Channel to receive the message or error
+	resultChan := make(chan struct {
+		message string
+		err     error
+	})
+
+	go func() {
+		message, err := utils.ReceiveBinaryString(s.controlChannel)
+		resultChan <- struct {
+			message string
+			err     error
+		}{message, err}
+	}()
 
 	for {
 		select {
@@ -271,28 +284,7 @@ func (s *TcpTransport) heartbeat() {
 				return
 			}
 			s.logger.Trace("heartbeat signal sent successfully")
-		}
-	}
-}
 
-func (s *TcpTransport) monitorControlChannel() {
-	// Channel to receive the message or error
-	resultChan := make(chan struct {
-		message string
-		err     error
-	})
-	go func() {
-		message, err := utils.ReceiveBinaryString(s.controlChannel)
-		resultChan <- struct {
-			message string
-			err     error
-		}{message, err}
-	}()
-
-	for {
-		select {
-		case <-s.ctx.Done():
-			return
 		case result := <-resultChan:
 			if result.err != nil {
 				s.logger.Errorf("failed to receive message from tunnel connection: %v", result.err)
@@ -315,10 +307,13 @@ func (s *TcpTransport) localListener(localAddr string, remoteAddr string) {
 		return
 	}
 
-	//close local listener after context cancellation
 	defer listener.Close()
 
 	s.logger.Infof("listener started successfully, listening on address: %s", listener.Addr().String())
+
+	localChannel := make(chan net.Conn, s.config.ChannelSize)
+
+	go s.handleLocalChan(localChannel, remoteAddr)
 
 	go func() {
 		for {
@@ -361,7 +356,7 @@ func (s *TcpTransport) localListener(localAddr string, remoteAddr string) {
 				}
 
 				select {
-				case s.localChannel <- LocalConn{conn: tcpConn, remoteAddr: remoteAddr}:
+				case localChannel <- tcpConn:
 					s.logger.Debugf("accepted incoming TCP connection from %s", tcpConn.RemoteAddr().String())
 
 				default: // channel is full, discard the connection
@@ -373,23 +368,24 @@ func (s *TcpTransport) localListener(localAddr string, remoteAddr string) {
 	}()
 
 	<-s.ctx.Done()
+
+	close(localChannel)
 }
 
-func (s *TcpTransport) handleTunnelConn(tunnelConnection net.Conn) {
-	select {
-	case localConnection := <-s.localChannel:
-		// Send the target addr over the connection
-		if err := utils.SendBinaryString(tunnelConnection, localConnection.remoteAddr); err != nil {
-			s.logger.Infof("%v", err)
-			tunnelConnection.Close()
-			localConnection.conn.Close()
-			return
+func (s *TcpTransport) handleLocalChan(localChan chan net.Conn, remoteAddr string) {
+	for localConn := range localChan {
+	innerloop:
+		for tunnelConn := range s.tunnelChannel {
+			// Send the target addr over the connection
+			if err := utils.SendBinaryString(tunnelConn, remoteAddr); err != nil {
+				s.logger.Errorf("%v", err)
+				tunnelConn.Close()
+				continue innerloop
+			}
 
+			// Handle data exchange between connections
+			utils.TCPConnectionHandler(localConn, tunnelConn, s.logger, s.usageMonitor, localConn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
+			break innerloop
 		}
-		// Handle data exchange between connections
-		utils.TCPConnectionHandler(localConnection.conn, tunnelConnection, s.logger, s.usageMonitor, localConnection.conn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
-
-	case <-s.ctx.Done():
-		return
 	}
 }

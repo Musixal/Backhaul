@@ -50,7 +50,7 @@ func (s *Server) Start() {
 			Sniffer:     s.config.Sniffer,
 			WebPort:     s.config.WebPort,
 			SnifferLog:  s.config.SnifferLog,
-			Heartbeat:   s.config.Heartbeat,
+			Heartbeat:   time.Duration(s.config.Heartbeat) * time.Second,
 		}
 
 		tcpServer := transport.NewTCPServer(s.ctx, tcpConfig, s.logger)
@@ -62,7 +62,6 @@ func (s *Server) Start() {
 			Nodelay:          s.config.Nodelay,
 			KeepAlive:        time.Duration(s.config.Keepalive) * time.Second,
 			Token:            s.config.Token,
-			MuxSession:       s.config.MuxSession,
 			ChannelSize:      s.config.ChannelSize,
 			Ports:            s.config.Ports,
 			MuxVersion:       s.config.MuxVersion,
@@ -72,6 +71,8 @@ func (s *Server) Start() {
 			Sniffer:          s.config.Sniffer,
 			WebPort:          s.config.WebPort,
 			SnifferLog:       s.config.SnifferLog,
+			MuxCon:           s.config.MuxCon,
+			Heartbeat:        time.Duration(s.config.Heartbeat) * time.Second,
 		}
 
 		tcpMuxServer := transport.NewTcpMuxServer(s.ctx, tcpMuxConfig, s.logger)
@@ -91,7 +92,7 @@ func (s *Server) Start() {
 			Mode:        s.config.Transport,
 			TLSCertFile: s.config.TLSCertFile,
 			TLSKeyFile:  s.config.TLSKeyFile,
-			Heartbeat:   s.config.Heartbeat,
+			Heartbeat:   time.Duration(s.config.Heartbeat) * time.Second,
 		}
 
 		wsServer := transport.NewWSServer(s.ctx, wsConfig, s.logger)
@@ -103,7 +104,6 @@ func (s *Server) Start() {
 			Nodelay:          s.config.Nodelay,
 			KeepAlive:        time.Duration(s.config.Keepalive) * time.Second,
 			Token:            s.config.Token,
-			MuxSession:       s.config.MuxSession,
 			ChannelSize:      s.config.ChannelSize,
 			Ports:            s.config.Ports,
 			MuxVersion:       s.config.MuxVersion,
@@ -116,6 +116,8 @@ func (s *Server) Start() {
 			Mode:             s.config.Transport,
 			TLSCertFile:      s.config.TLSCertFile,
 			TLSKeyFile:       s.config.TLSKeyFile,
+			MuxCon:           s.config.MuxCon,
+			Heartbeat:        time.Duration(s.config.Heartbeat) * time.Second,
 		}
 
 		wsMuxServer := transport.NewWSMuxServer(s.ctx, wsMuxConfig, s.logger)

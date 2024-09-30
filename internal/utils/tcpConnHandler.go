@@ -9,6 +9,9 @@ import (
 )
 
 func TCPConnectionHandler(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
+	defer from.Close()
+	defer to.Close()
+
 	done := make(chan struct{})
 
 	go func() {
@@ -23,6 +26,9 @@ func TCPConnectionHandler(from net.Conn, to net.Conn, logger *logrus.Logger, usa
 
 // Using io.Copy for efficient data transfer
 func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
+	defer from.Close()
+	defer to.Close()
+
 	bytesCopied, err := io.Copy(to, from)
 	if err != nil {
 		logger.Trace("error during data transfer: ", err)
@@ -33,7 +39,4 @@ func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.
 	if sniffer {
 		usage.AddOrUpdatePort(remotePort, uint64(bytesCopied))
 	}
-
-	from.Close()
-	to.Close()
 }

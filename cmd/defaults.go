@@ -22,6 +22,7 @@ const ( // Default values
 	defaultMaxReceiveBuffer = 4194304 // 4MB
 	defaultMaxStreamBuffer  = 65536   // 256KB
 	defaultSnifferLog       = "backhaul.json"
+	defaultMuxCon           = 8
 )
 
 func applyDefaults(cfg *config.Config) {
@@ -122,5 +123,10 @@ func applyDefaults(cfg *config.Config) {
 	// Timeout
 	if cfg.Client.DialTimeout < 1 { // Minimum accepted value is 1 second
 		cfg.Client.DialTimeout = defaultDialTimeout
+	}
+
+	// Mux concurrancy
+	if cfg.Server.MuxCon < 1 {
+		cfg.Server.MuxCon = defaultMuxCon
 	}
 }
