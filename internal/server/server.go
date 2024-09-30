@@ -44,13 +44,13 @@ func (s *Server) Start() {
 			BindAddr:    s.config.BindAddr,
 			Nodelay:     s.config.Nodelay,
 			KeepAlive:   time.Duration(s.config.Keepalive) * time.Second,
+			Heartbeat:   time.Duration(s.config.Heartbeat) * time.Second,
 			Token:       s.config.Token,
 			ChannelSize: s.config.ChannelSize,
 			Ports:       s.config.Ports,
 			Sniffer:     s.config.Sniffer,
 			WebPort:     s.config.WebPort,
 			SnifferLog:  s.config.SnifferLog,
-			Heartbeat:   time.Duration(s.config.Heartbeat) * time.Second,
 		}
 
 		tcpServer := transport.NewTCPServer(s.ctx, tcpConfig, s.logger)
@@ -61,9 +61,11 @@ func (s *Server) Start() {
 			BindAddr:         s.config.BindAddr,
 			Nodelay:          s.config.Nodelay,
 			KeepAlive:        time.Duration(s.config.Keepalive) * time.Second,
+			Heartbeat:        time.Duration(s.config.Heartbeat) * time.Second,
 			Token:            s.config.Token,
 			ChannelSize:      s.config.ChannelSize,
 			Ports:            s.config.Ports,
+			MuxCon:           s.config.MuxCon,
 			MuxVersion:       s.config.MuxVersion,
 			MaxFrameSize:     s.config.MaxFrameSize,
 			MaxReceiveBuffer: s.config.MaxReceiveBuffer,
@@ -71,8 +73,6 @@ func (s *Server) Start() {
 			Sniffer:          s.config.Sniffer,
 			WebPort:          s.config.WebPort,
 			SnifferLog:       s.config.SnifferLog,
-			MuxCon:           s.config.MuxCon,
-			Heartbeat:        time.Duration(s.config.Heartbeat) * time.Second,
 		}
 
 		tcpMuxServer := transport.NewTcpMuxServer(s.ctx, tcpMuxConfig, s.logger)
@@ -83,6 +83,7 @@ func (s *Server) Start() {
 			BindAddr:    s.config.BindAddr,
 			Nodelay:     s.config.Nodelay,
 			KeepAlive:   time.Duration(s.config.Keepalive) * time.Second,
+			Heartbeat:   time.Duration(s.config.Heartbeat) * time.Second,
 			Token:       s.config.Token,
 			ChannelSize: s.config.ChannelSize,
 			Ports:       s.config.Ports,
@@ -92,7 +93,6 @@ func (s *Server) Start() {
 			Mode:        s.config.Transport,
 			TLSCertFile: s.config.TLSCertFile,
 			TLSKeyFile:  s.config.TLSKeyFile,
-			Heartbeat:   time.Duration(s.config.Heartbeat) * time.Second,
 		}
 
 		wsServer := transport.NewWSServer(s.ctx, wsConfig, s.logger)
@@ -103,9 +103,11 @@ func (s *Server) Start() {
 			BindAddr:         s.config.BindAddr,
 			Nodelay:          s.config.Nodelay,
 			KeepAlive:        time.Duration(s.config.Keepalive) * time.Second,
+			Heartbeat:        time.Duration(s.config.Heartbeat) * time.Second,
 			Token:            s.config.Token,
 			ChannelSize:      s.config.ChannelSize,
 			Ports:            s.config.Ports,
+			MuxCon:           s.config.MuxCon,
 			MuxVersion:       s.config.MuxVersion,
 			MaxFrameSize:     s.config.MaxFrameSize,
 			MaxReceiveBuffer: s.config.MaxReceiveBuffer,
@@ -116,8 +118,6 @@ func (s *Server) Start() {
 			Mode:             s.config.Transport,
 			TLSCertFile:      s.config.TLSCertFile,
 			TLSKeyFile:       s.config.TLSKeyFile,
-			MuxCon:           s.config.MuxCon,
-			Heartbeat:        time.Duration(s.config.Heartbeat) * time.Second,
 		}
 
 		wsMuxServer := transport.NewWSMuxServer(s.ctx, wsMuxConfig, s.logger)

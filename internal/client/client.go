@@ -50,14 +50,14 @@ func (c *Client) Start() {
 		tcpConfig := &transport.TcpConfig{
 			RemoteAddr:     c.config.RemoteAddr,
 			Nodelay:        c.config.Nodelay,
-			ConnectionPool: c.config.ConnectionPool,
 			KeepAlive:      time.Duration(c.config.Keepalive) * time.Second,
 			RetryInterval:  time.Duration(c.config.RetryInterval) * time.Second,
+			DialTimeOut:    time.Duration(c.config.DialTimeout) * time.Second,
+			ConnectionPool: c.config.ConnectionPool,
 			Token:          c.config.Token,
 			Sniffer:        c.config.Sniffer,
 			WebPort:        c.config.WebPort,
 			SnifferLog:     c.config.SnifferLog,
-			DialTimeOut:    time.Duration(c.config.DialTimeout) * time.Second,
 		}
 		tcpClient := transport.NewTCPClient(c.ctx, tcpConfig, c.logger)
 		go tcpClient.ChannelDialer()
@@ -68,6 +68,7 @@ func (c *Client) Start() {
 			Nodelay:          c.config.Nodelay,
 			KeepAlive:        time.Duration(c.config.Keepalive) * time.Second,
 			RetryInterval:    time.Duration(c.config.RetryInterval) * time.Second,
+			DialTimeOut:      time.Duration(c.config.DialTimeout) * time.Second,
 			ConnectionPool:   c.config.ConnectionPool,
 			Token:            c.config.Token,
 			MuxVersion:       c.config.MuxVersion,
@@ -77,7 +78,6 @@ func (c *Client) Start() {
 			Sniffer:          c.config.Sniffer,
 			WebPort:          c.config.WebPort,
 			SnifferLog:       c.config.SnifferLog,
-			DialTimeOut:      time.Duration(c.config.DialTimeout) * time.Second,
 		}
 		tcpMuxClient := transport.NewMuxClient(c.ctx, tcpMuxConfig, c.logger)
 		go tcpMuxClient.ChannelDialer()
@@ -88,13 +88,13 @@ func (c *Client) Start() {
 			Nodelay:        c.config.Nodelay,
 			KeepAlive:      time.Duration(c.config.Keepalive) * time.Second,
 			RetryInterval:  time.Duration(c.config.RetryInterval) * time.Second,
+			DialTimeOut:    time.Duration(c.config.DialTimeout) * time.Second,
 			ConnectionPool: c.config.ConnectionPool,
 			Token:          c.config.Token,
 			Sniffer:        c.config.Sniffer,
 			WebPort:        c.config.WebPort,
 			SnifferLog:     c.config.SnifferLog,
 			Mode:           c.config.Transport,
-			DialTimeOut:    time.Duration(c.config.DialTimeout) * time.Second,
 		}
 		WsClient := transport.NewWSClient(c.ctx, WsConfig, c.logger)
 		go WsClient.ChannelDialer()
@@ -104,6 +104,8 @@ func (c *Client) Start() {
 			Nodelay:          c.config.Nodelay,
 			KeepAlive:        time.Duration(c.config.Keepalive) * time.Second,
 			RetryInterval:    time.Duration(c.config.RetryInterval) * time.Second,
+			DialTimeOut:      time.Duration(c.config.DialTimeout) * time.Second,
+			ConnectionPool:   c.config.ConnectionPool,
 			Token:            c.config.Token,
 			MuxVersion:       c.config.MuxVersion,
 			MaxFrameSize:     c.config.MaxFrameSize,
@@ -113,8 +115,6 @@ func (c *Client) Start() {
 			WebPort:          c.config.WebPort,
 			SnifferLog:       c.config.SnifferLog,
 			Mode:             c.config.Transport,
-			DialTimeOut:      time.Duration(c.config.DialTimeout) * time.Second,
-			ConnectionPool:   c.config.ConnectionPool,
 		}
 		wsMuxClient := transport.NewWSMuxClient(c.ctx, wsMuxConfig, c.logger)
 		go wsMuxClient.ChannelDialer()
