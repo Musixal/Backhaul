@@ -24,7 +24,6 @@ type TcpTransport struct {
 	tunnelChannel  chan net.Conn
 	controlChannel net.Conn
 	restartMutex   sync.Mutex
-	timeout        time.Duration
 	heartbeatSig   string
 	chanSignal     string
 	usageMonitor   *web.Usage
