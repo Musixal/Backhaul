@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/musix/backhaul/cmd"
 	"github.com/musix/backhaul/internal/utils"
 )
@@ -20,6 +20,15 @@ var (
 
 // Define the version of the application -v
 const version = "v0.4.0"
+
+func getLastModTime(file string) (time.Time, error) {
+	absPath, _ := filepath.Abs(file)
+	fileInfo, err := os.Stat(absPath)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return fileInfo.ModTime(), nil
+}
 
 func main() {
 	configPath := flag.String("c", "", "path to the configuration file (TOML format)")
@@ -47,50 +56,48 @@ func main() {
 
 	go cmd.Run(*configPath, ctx)
 
-	// Hot Reload
-	go func() {
-		watcher, err := fsnotify.NewWatcher()
-		if err != nil {
-			logger.Fatal(err)
-		}
-		defer watcher.Close()
+	// Get initial modification time of the config file
+	lastModTime, err := getLastModTime(*configPath)
+	if err != nil {
+		logger.Fatalf("Error getting modification time: %v", err)
+	}
 
-		// Add the config file to the watcher
-		err = watcher.Add(*configPath)
-		if err != nil {
-			logger.Fatal(err)
-		}
+	// Polling for file changes
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
 
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case event, ok := <-watcher.Events:
-				if !ok {
-					return
+			case <-ticker.C:
+				modTime, err := getLastModTime(*configPath)
+				if err != nil {
+					logger.Errorf("Error checking file modification time: %v", err)
+					continue
 				}
-				if event.Op&fsnotify.Write == fsnotify.Write || event.Op&fsnotify.Create == fsnotify.Create {
-					logger.Info("config changed, hot reloading: ", event.Name)
+
+				// If the modification time has changed, reload the app
+				if modTime.After(lastModTime) {
+					logger.Info("Config file changed, reloading application")
 
 					// Cancel the previous context to stop the old running instance
 					cancel()
+
+					time.Sleep(2 * time.Second)
 
 					// Create a new context for the new instance
 					newCtx, newCancel := context.WithCancel(context.Background())
 					go cmd.Run(*configPath, newCtx)
 
-					// Update the parent context and cancel function with the new ones
+					// Update the last modification time and the context
+					lastModTime = modTime
 					ctx = newCtx
 					cancel = newCancel
 				}
-			case err, ok := <-watcher.Errors:
-				if !ok {
-					return
-				}
-				logger.Error("Watcher error: ", err)
 			}
 		}
-
 	}()
 
 	<-sigChan
