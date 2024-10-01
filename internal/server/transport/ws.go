@@ -91,8 +91,10 @@ func (s *WsTransport) Restart() {
 		s.cancel()
 	}
 
-	// Close any open connections in the tunnel channel.
-	go s.cleanupConnections()
+	// Close open connection
+	if s.controlChannel != nil {
+		s.controlChannel.Close()
+	}
 
 	time.Sleep(2 * time.Second)
 
@@ -109,25 +111,6 @@ func (s *WsTransport) Restart() {
 
 	go s.TunnelListener()
 
-}
-
-// cleanupConnections closes all active connections in the tunnel channel.
-func (s *WsTransport) cleanupConnections() {
-	if s.controlChannel != nil {
-		s.logger.Debug("control channel have been closed.")
-		s.controlChannel.Close()
-	}
-	for {
-		select {
-		case conn := <-s.tunnelChannel:
-			if conn.conn != nil {
-				conn.conn.Close()
-				s.logger.Trace("existing tunnel connections have been closed.")
-			}
-		default:
-			return
-		}
-	}
 }
 
 func (s *WsTransport) getClosedSignal() {
@@ -330,6 +313,9 @@ func (s *WsTransport) TunnelListener() {
 	<-s.ctx.Done()
 
 	close(s.tunnelChannel)
+	if s.controlChannel != nil {
+		s.controlChannel.Close()
+	}
 
 	// Gracefully shutdown the server
 	s.logger.Infof("shutting down the webSocket server on %s", addr)

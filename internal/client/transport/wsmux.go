@@ -64,8 +64,8 @@ func NewWSMuxClient(parentCtx context.Context, config *WsMuxConfig, logger *logr
 	client := &WsMuxTransport{
 		smuxConfig: &smux.Config{
 			Version:           config.MuxVersion,
-			KeepAliveInterval: 10 * time.Second,
-			KeepAliveTimeout:  30 * time.Second,
+			KeepAliveInterval: 20 * time.Second,
+			KeepAliveTimeout:  300 * time.Hour,
 			MaxFrameSize:      config.MaxFrameSize,
 			MaxReceiveBuffer:  config.MaxReceiveBuffer,
 			MaxStreamBuffer:   config.MaxStreamBuffer,
@@ -98,6 +98,9 @@ func (c *WsMuxTransport) Restart() {
 		c.cancel()
 	}
 
+	// Close tunnel channel connection
+	c.closeControlChannel("restart")
+
 	time.Sleep(2 * time.Second)
 
 	ctx, cancel := context.WithCancel(c.parentctx)
@@ -129,8 +132,9 @@ func (c *WsMuxTransport) ChannelDialer() {
 		go c.usageMonitor.Monitor()
 	}
 
-	c.config.TunnelStatus = "Disconnected (WsMux)"
-	c.logger.Info("attempting to establish a new wsmux control channel connection")
+	c.config.TunnelStatus = fmt.Sprintf("Disconnected (%s)", c.config.Mode)
+
+	c.logger.Infof("attempting to establish a new %s control channel connection", c.config.Mode)
 
 connectLoop:
 	for {
@@ -141,14 +145,14 @@ connectLoop:
 
 			tunnelWSConn, err := c.wsDialer(c.config.RemoteAddr, "/channel")
 			if err != nil {
-				c.logger.Errorf("failed to dial wsmux control channel: %v", err)
+				c.logger.Errorf("failed to dial %s control channel: %v", c.config.Mode, err)
 				time.Sleep(c.config.RetryInterval)
 				continue
 			}
 			c.controlChannel = tunnelWSConn
-			c.logger.Info("wsmux control channel established successfully")
+			c.logger.Infof("%s control channel established successfully", c.config.Mode)
 
-			c.config.TunnelStatus = "Connected (WsMux)"
+			c.config.TunnelStatus = fmt.Sprintf("Connected (%s)", c.config.Mode)
 
 			go c.channelListener()
 			go c.poolChecker()
@@ -156,9 +160,6 @@ connectLoop:
 			break connectLoop
 		}
 	}
-
-	<-c.ctx.Done()
-	c.closeControlChannel("context cancellation")
 }
 
 func (c *WsMuxTransport) channelListener() {
@@ -180,6 +181,7 @@ func (c *WsMuxTransport) channelListener() {
 	for {
 		select {
 		case <-c.ctx.Done():
+			c.closeControlChannel("context cancellation")
 			return
 
 		case msg := <-msgChan:
@@ -210,15 +212,15 @@ func (c *WsMuxTransport) tunnelDialer() {
 	c.activeMu.Unlock()
 
 	if c.controlChannel == nil {
-		c.logger.Warn("wsmux control channel is nil, cannot dial tunnel. Restarting client...")
+		c.logger.Warnf("%s control channel is nil, cannot dial tunnel. Restarting client...", c.config.Mode)
 		go c.Restart()
 		return
 	}
-	c.logger.Debugf("initiating new wsmux tunnel connection to address %s", c.config.RemoteAddr)
+	c.logger.Debugf("initiating new %s tunnel connection to address %s", c.config.Mode, c.config.RemoteAddr)
 
 	tunnelWSConn, err := c.wsDialer(c.config.RemoteAddr, "/tunnel")
 	if err != nil {
-		c.logger.Errorf("failed to dial wsmux tunnel server: %v", err)
+		c.logger.Errorf("failed to dial %s tunnel server: %v", c.config.Mode, err)
 		c.activeMu.Lock()
 		c.activeConnections--
 		c.activeMu.Unlock()
@@ -235,7 +237,7 @@ func (c *WsMuxTransport) handleTunnelConn(tunnelConn *websocket.Conn) {
 	}()
 
 	// SMUX server
-	session, err := smux.Server(tunnelConn.UnderlyingConn(), c.smuxConfig)
+	session, err := smux.Server(tunnelConn.NetConn(), c.smuxConfig)
 	if err != nil {
 		c.logger.Errorf("failed to create mux session: %v", err)
 		return
@@ -248,15 +250,15 @@ func (c *WsMuxTransport) handleTunnelConn(tunnelConn *websocket.Conn) {
 		default:
 			stream, err := session.AcceptStream()
 			if err != nil {
-				c.logger.Trace("session is closed: ", err)
+				c.logger.Debug("session is closed: ", err)
 				return
 			}
 
 			remoteAddr, err := utils.ReceiveBinaryString(stream)
 			if err != nil {
-				c.logger.Errorf("unable to get port from websocket connection %s: %v", tunnelConn.RemoteAddr().String(), err)
+				c.logger.Errorf("unable to get port from stream connection %s: %v", tunnelConn.RemoteAddr().String(), err)
 				if err := session.Close(); err != nil {
-					c.logger.Errorf("failed to close mux stream due to recievebinarystring: %v", err)
+					c.logger.Errorf("failed to close mux stream: %v", err)
 				}
 				tunnelConn.Close()
 				return
@@ -306,7 +308,7 @@ func (c *WsMuxTransport) wsDialer(addr string, path string) (*websocket.Conn, er
 
 	// Setup headers with authorization
 	headers := http.Header{}
-	headers.Add("Authorization", fmt.Sprintf("Bearer %v", c.config.Token))
+	headers.Add("Auth", fmt.Sprintf("%v", c.config.Token))
 
 	var wsURL string
 	dialer := websocket.Dialer{}
@@ -319,7 +321,6 @@ func (c *WsMuxTransport) wsDialer(addr string, path string) (*websocket.Conn, er
 				if err != nil {
 					return nil, err
 				}
-				//tcpConn := conn.(*net.TCPConn)
 				conn.SetKeepAlive(true)                     // Enable TCP keepalive
 				conn.SetKeepAlivePeriod(c.config.KeepAlive) // Set keepalive period
 				return conn, nil
@@ -389,32 +390,6 @@ func (c *WsMuxTransport) tcpDialer(address string) (*net.TCPConn, error) {
 	return tcpConn, nil
 }
 
-func (c *WsMuxTransport) poolChecker() {
-	ticker := time.NewTicker(time.Millisecond * 350)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-c.ctx.Done():
-			return
-
-		case <-ticker.C:
-			c.logger.Tracef("active connections: %d", c.activeConnections)
-			if c.activeConnections < c.config.ConnectionPool/2 {
-				neededConn := c.config.ConnectionPool - c.activeConnections
-				for i := 0; i < neededConn; i++ {
-					go c.tunnelDialer()
-					time.Sleep(time.Millisecond * 10)
-				}
-
-			}
-
-		}
-
-	}
-
-}
-
 func (c *WsMuxTransport) reusePortControl(network, address string, s syscall.RawConn) error {
 	var controlErr error
 
@@ -440,4 +415,29 @@ func (c *WsMuxTransport) reusePortControl(network, address string, s syscall.Raw
 	}
 
 	return controlErr
+}
+
+func (c *WsMuxTransport) poolChecker() {
+	ticker := time.NewTicker(time.Millisecond * 350)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+
+		case <-ticker.C:
+			c.logger.Tracef("active connections: %d", c.activeConnections)
+			if c.activeConnections < c.config.ConnectionPool/2 {
+				neededConn := c.config.ConnectionPool - c.activeConnections
+				for i := 0; i < neededConn; i++ {
+					go c.tunnelDialer()
+				}
+
+			}
+
+		}
+
+	}
+
 }

@@ -92,6 +92,9 @@ func (c *TcpMuxTransport) Restart() {
 		c.cancel()
 	}
 
+	// Close tunnel channel connection
+	c.closeControlChannel("restart")
+
 	time.Sleep(2 * time.Second)
 
 	ctx, cancel := context.WithCancel(c.parentctx)
@@ -177,9 +180,6 @@ loop:
 		}
 	}
 
-	<-c.ctx.Done()
-
-	c.closeControlChannel("context cancellation")
 }
 
 func (c *TcpMuxTransport) closeControlChannel(reason string) {
@@ -210,6 +210,7 @@ func (c *TcpMuxTransport) channelListener() {
 	for {
 		select {
 		case <-c.ctx.Done():
+			c.closeControlChannel("context cancellation")
 			return
 		case msg := <-msgChan:
 			switch msg {
@@ -282,9 +283,9 @@ func (c *TcpMuxTransport) handleTunnelConn(tunnelConn net.Conn) {
 
 			remoteAddr, err := utils.ReceiveBinaryString(stream)
 			if err != nil {
-				c.logger.Errorf("unable to get port from websocket connection %s: %v", tunnelConn.RemoteAddr().String(), err)
+				c.logger.Errorf("unable to get port from stream connection %s: %v", tunnelConn.RemoteAddr().String(), err)
 				if err := session.Close(); err != nil {
-					c.logger.Errorf("failed to close mux stream due to recievebinarystring: %v", err)
+					c.logger.Errorf("failed to close mux stream: %v", err)
 				}
 				tunnelConn.Close()
 				return

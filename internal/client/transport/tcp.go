@@ -79,7 +79,8 @@ func (c *TcpTransport) Restart() {
 		c.cancel()
 	}
 
-	go c.closeControlChannel("restarting client")
+	// Close tunnel channel connection
+	c.closeControlChannel("restart")
 
 	time.Sleep(2 * time.Second)
 
@@ -96,6 +97,14 @@ func (c *TcpTransport) Restart() {
 
 	go c.ChannelDialer()
 
+}
+
+func (c *TcpTransport) closeControlChannel(reason string) {
+	if c.controlChannel != nil {
+		_ = utils.SendBinaryString(c.controlChannel, "closed")
+		c.controlChannel.Close()
+		c.logger.Debugf("control channel closed due to %s", reason)
+	}
 }
 
 func (c *TcpTransport) ChannelDialer() {
@@ -166,17 +175,6 @@ loop:
 		}
 	}
 
-	<-c.ctx.Done()
-
-	c.closeControlChannel("context cancellation")
-}
-
-func (c *TcpTransport) closeControlChannel(reason string) {
-	if c.controlChannel != nil {
-		_ = utils.SendBinaryString(c.controlChannel, "closed")
-		c.controlChannel.Close()
-		c.logger.Debugf("control channel closed due to %s", reason)
-	}
 }
 
 func (c *TcpTransport) channelListener() {
@@ -199,6 +197,7 @@ func (c *TcpTransport) channelListener() {
 	for {
 		select {
 		case <-c.ctx.Done():
+			c.closeControlChannel("context cancellation")
 			return
 		case msg := <-msgChan:
 			switch msg {

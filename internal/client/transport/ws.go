@@ -84,6 +84,9 @@ func (c *WsTransport) Restart() {
 		c.cancel()
 	}
 
+	// Close tunnel channel connection
+	c.closeControlChannel("restart")
+
 	time.Sleep(2 * time.Second)
 
 	ctx, cancel := context.WithCancel(c.parentctx)
@@ -141,10 +144,6 @@ connectLoop:
 			break connectLoop
 		}
 	}
-
-	<-c.ctx.Done()
-
-	c.closeControlChannel("context cancellation")
 }
 
 func (c *WsTransport) channelListener() {
@@ -166,6 +165,7 @@ func (c *WsTransport) channelListener() {
 	for {
 		select {
 		case <-c.ctx.Done():
+			c.closeControlChannel("context cancellation")
 			return
 		case msg := <-msgChan:
 			switch msg {
