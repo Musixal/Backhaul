@@ -39,7 +39,7 @@ func (c *Client) Start() {
 	// for pprof
 	if c.config.PPROF {
 		go func() {
-			c.logger.Info("pprof started at port 6060")
+			c.logger.Info("pprof started at port 6061")
 			http.ListenAndServe("0.0.0.0:6061", nil)
 		}()
 	}

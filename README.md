@@ -79,7 +79,7 @@ To start using the solution, you'll need to configure both server and client com
     mux_recievebuffer = 4194304   # 4 MB. The maximum buffer size for incoming data per connection. (optional)
     mux_streambuffer = 65536      # 256 KB. The maximum buffer size per individual stream within a connection. (optional)
     sniffer = false               # Enable or disable network sniffing for monitoring data. (optional, default false)
-    web_port = 2060               # Port number for the web interface or monitoring interface. (optional, default disabled).
+    web_port = 2060               # Port number for the web interface or monitoring interface. (optional, set to 0 to disable).
     sniffer_log ="/root/log.json" # Filename used to store network traffic and usage data logs. (optional, default backhaul.json)
     tls_cert = "/root/server.crt" # Path to the TLS certificate file for wss/wssmux. (mandatory).
     tls_key = "/root/server.key"  # Path to the TLS private key file for wss/wssmux. (mandatory).
@@ -118,7 +118,7 @@ To start using the solution, you'll need to configure both server and client com
    mux_recievebuffer = 4194304   # 4 MB. The maximum buffer size for incoming data per connection. (optional)
    mux_streambuffer = 65536      # 256 KB. The maximum buffer size per individual stream within a connection. (optional)
    sniffer = false               # Enable or disable network sniffing for monitoring data. (optional, default false)
-   web_port = 2060               # Port number for the web interface or monitoring interface. (optional, default disabled).
+   web_port = 2060               # Port number for the web interface or monitoring interface. (optional, set to 0 to disable).
    sniffer_log ="/root/log.json" # Filename used to store network traffic and usage data logs. (optional, default backhaul.json)
    log_level = "info"            # Log level ("panic", "fatal", "error", "warn", "info", "debug", "trace", optional, default: "info").
    ```
