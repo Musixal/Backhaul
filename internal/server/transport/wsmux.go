@@ -239,8 +239,8 @@ func (s *WsMuxTransport) TunnelListener() {
 			s.logger.Tracef("received http request from %s", r.RemoteAddr)
 
 			// Read the "Authorization" header
-			authHeader := r.Header.Get("Auth")
-			if authHeader != fmt.Sprintf("%v", s.config.Token) {
+			authHeader := r.Header.Get("Authorization")
+			if authHeader != fmt.Sprintf("Bearer %v", s.config.Token) {
 				s.logger.Warnf("unauthorized request from %s, closing connection", r.RemoteAddr)
 				http.Error(w, "unauthorized", http.StatusUnauthorized) // Send 401 Unauthorized response
 				return

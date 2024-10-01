@@ -308,7 +308,7 @@ func (c *WsMuxTransport) wsDialer(addr string, path string) (*websocket.Conn, er
 
 	// Setup headers with authorization
 	headers := http.Header{}
-	headers.Add("Auth", fmt.Sprintf("%v", c.config.Token))
+	headers.Add("Authorization", fmt.Sprintf("Bearer %v", c.config.Token))
 
 	var wsURL string
 	dialer := websocket.Dialer{}
