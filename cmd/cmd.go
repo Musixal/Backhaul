@@ -2,10 +2,6 @@ package cmd
 
 import (
 	"context"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
 	"github.com/musix/backhaul/internal/client"
 	"github.com/musix/backhaul/internal/config"
@@ -19,7 +15,7 @@ var (
 	logger = utils.NewLogger("info")
 )
 
-func Run(configPath string) {
+func Run(configPath string, parentctx context.Context) {
 	// Load and parse the configuration file
 	cfg, err := loadConfig(configPath)
 	if err != nil {
@@ -27,15 +23,11 @@ func Run(configPath string) {
 	}
 
 	// Apply default values to the configuration
-	applyDefaults(&cfg)
+	applyDefaults(cfg)
 
 	// Create a context for graceful shutdown handling
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(parentctx)
 	defer cancel()
-
-	// Set up signal handling for graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	// Determine whether to run as a server or client
 	if cfg.Server.BindAddr != "" {
@@ -43,9 +35,8 @@ func Run(configPath string) {
 		go srv.Start()
 
 		// Wait for shutdown signal
-		<-sigChan
+		<-ctx.Done()
 		srv.Stop()
-		time.Sleep(1 * time.Second)
 		logger.Println("shutting down server...")
 
 	} else if cfg.Client.RemoteAddr != "" {
@@ -53,9 +44,8 @@ func Run(configPath string) {
 		go clnt.Start()
 
 		// Wait for shutdown signal
-		<-sigChan
+		<-ctx.Done()
 		clnt.Stop()
-		time.Sleep(1 * time.Second)
 		logger.Println("shutting down client...")
 	} else {
 		logger.Fatalf("neither server nor client configuration is properly set.")
@@ -63,10 +53,10 @@ func Run(configPath string) {
 }
 
 // loadConfig loads and parses the TOML configuration file.
-func loadConfig(configPath string) (config.Config, error) {
+func loadConfig(configPath string) (*config.Config, error) {
 	var cfg config.Config
 	if _, err := toml.DecodeFile(configPath, &cfg); err != nil {
-		return cfg, err
+		return &cfg, err
 	}
-	return cfg, nil
+	return &cfg, nil
 }
