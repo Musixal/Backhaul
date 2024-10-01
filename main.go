@@ -18,7 +18,7 @@ var (
 	logger = utils.NewLogger("info")
 )
 
-// Define the version of the application -v
+// Define the version of the application
 const version = "v0.4.0"
 
 func getLastModTime(file string) (time.Time, error) {
