@@ -278,6 +278,7 @@ func (c *TcpMuxTransport) handleTunnelConn(tunnelConn net.Conn) {
 			stream, err := session.AcceptStream()
 			if err != nil {
 				c.logger.Trace("session is closed: ", err)
+				session.Close()
 				return
 			}
 
