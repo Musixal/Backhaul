@@ -252,7 +252,6 @@ func (s *TcpMuxTransport) TunnelListener() {
 
 	<-s.ctx.Done()
 
-	close(s.tunnelChannel)
 	if s.controlChannel != nil {
 		s.controlChannel.Close()
 	}
@@ -342,8 +341,6 @@ func (s *TcpMuxTransport) localListener(localAddr string, remoteAddr string) {
 	go s.handleLocalChan(localChannel, remoteAddr)
 
 	<-s.ctx.Done()
-
-	close(localChannel)
 }
 
 func (s *TcpMuxTransport) acceptLocalCon(listener net.Listener, localChannel chan net.Conn) {

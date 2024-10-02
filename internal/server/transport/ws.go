@@ -312,7 +312,6 @@ func (s *WsTransport) TunnelListener() {
 
 	<-s.ctx.Done()
 
-	close(s.tunnelChannel)
 	if s.controlChannel != nil {
 		s.controlChannel.Close()
 	}
@@ -344,8 +343,6 @@ func (s *WsTransport) localListener(localAddr string, remoteAddr string) {
 	go s.handleLocalChan(remoteAddr, localChan)
 
 	<-s.ctx.Done()
-
-	close(localChan)
 }
 
 func (s *WsTransport) acceptLocalConn(listener net.Listener, acceptChan chan net.Conn) {

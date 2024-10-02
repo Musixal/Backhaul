@@ -298,7 +298,6 @@ func (s *WsMuxTransport) TunnelListener() {
 
 	<-s.ctx.Done()
 
-	close(s.tunnelChannel)
 	if s.controlChannel != nil {
 		s.controlChannel.Close()
 	}
@@ -328,7 +327,6 @@ func (s *WsMuxTransport) localListener(localAddr string, remoteAddr string) {
 	s.logger.Infof("listener started successfully, listening on address: %s", listener.Addr().String())
 
 	<-s.ctx.Done()
-	close(localChannel)
 }
 
 func (s *WsMuxTransport) acceptLocalCon(listener net.Listener, localChannel chan net.Conn) {
