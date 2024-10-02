@@ -407,16 +407,18 @@ func (s *TcpMuxTransport) handleSession(session *smux.Session) {
 				s.logger.Errorf("failed to close mux stream: %v", err)
 			}
 			s.localChan <- incomingConn // back to local channel
+			s.muxMutex.Unlock()
 			return
 		}
 
 		// Send the target port over the tunnel connection
 		if err := utils.SendBinaryString(stream, incomingConn.remoteAddr); err != nil {
 			s.logger.Errorf("failed to send address %v over stream: %v", incomingConn.remoteAddr, err)
-			s.localChan <- incomingConn // back to local channel
 			if err := session.Close(); err != nil {
 				s.logger.Errorf("failed to close mux stream: %v", err)
 			}
+			s.localChan <- incomingConn // back to local channel
+			s.muxMutex.Unlock()
 			return
 		}
 
