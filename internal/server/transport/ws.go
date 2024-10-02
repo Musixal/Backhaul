@@ -383,7 +383,7 @@ func (s *WsTransport) acceptLocalConn(listener net.Listener, acceptChan chan net
 				// Successfully requested a new connection
 			default:
 				// The channel is full, do nothing
-				s.logger.Warn("getNewConnChan is full, cannot request a new connection")
+				s.logger.Warn("channel is full, cannot request a new connection")
 			}
 
 			select {

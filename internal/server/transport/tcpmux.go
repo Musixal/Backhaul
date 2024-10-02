@@ -23,10 +23,11 @@ type TcpMuxTransport struct {
 	ctx            context.Context
 	cancel         context.CancelFunc
 	logger         *logrus.Logger
-	tunnelChannel  chan net.Conn
+	localChan      chan LocalTCPConn
 	controlChannel net.Conn
 	usageMonitor   *web.Usage
 	restartMutex   sync.Mutex
+	muxMutex       sync.Mutex
 	heartbeatSig   string
 	chanSignal     string
 }
@@ -59,8 +60,8 @@ func NewTcpMuxServer(parentCtx context.Context, config *TcpMuxConfig, logger *lo
 	server := &TcpMuxTransport{
 		smuxConfig: &smux.Config{
 			Version:           config.MuxVersion,
-			KeepAliveInterval: 10 * time.Second,
-			KeepAliveTimeout:  30 * time.Second,
+			KeepAliveInterval: 20 * time.Second,
+			KeepAliveTimeout:  40 * time.Second,
 			MaxFrameSize:      config.MaxFrameSize,
 			MaxReceiveBuffer:  config.MaxReceiveBuffer,
 			MaxStreamBuffer:   config.MaxStreamBuffer,
@@ -70,7 +71,7 @@ func NewTcpMuxServer(parentCtx context.Context, config *TcpMuxConfig, logger *lo
 		ctx:            ctx,
 		cancel:         cancel,
 		logger:         logger,
-		tunnelChannel:  make(chan net.Conn, config.ChannelSize),
+		localChan:      make(chan LocalTCPConn, config.ChannelSize),
 		controlChannel: nil, // will be set when a control connection is established
 		heartbeatSig:   "0", // Default heartbeat signal
 		chanSignal:     "1", // Default channel signal
@@ -104,10 +105,11 @@ func (s *TcpMuxTransport) Restart() {
 	s.cancel = cancel
 
 	// Re-initialize variables
-	s.tunnelChannel = make(chan net.Conn, s.config.ChannelSize)
+	s.localChan = make(chan LocalTCPConn, s.config.ChannelSize)
 	s.controlChannel = nil
 	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.config.Sniffer, &s.config.TunnelStatus, s.logger)
 	s.config.TunnelStatus = ""
+	s.muxMutex = sync.Mutex{}
 
 	go s.TunnelListener()
 
@@ -311,12 +313,7 @@ func (s *TcpMuxTransport) acceptTunCon(listener net.Listener) {
 				continue
 			}
 
-			select {
-			case s.tunnelChannel <- conn:
-			default: // The channel is full, do nothing
-				s.logger.Warn("tunnel channel is full, discard the connection")
-				conn.Close()
-			}
+			go s.handleTunConn(conn)
 		}
 	}
 
@@ -334,16 +331,12 @@ func (s *TcpMuxTransport) localListener(localAddr string, remoteAddr string) {
 
 	s.logger.Infof("listener started successfully, listening on address: %s", listener.Addr().String())
 
-	// channel
-	localChannel := make(chan net.Conn, s.config.ChannelSize)
-
-	go s.acceptLocalCon(listener, localChannel)
-	go s.handleLocalChan(localChannel, remoteAddr)
+	go s.acceptLocalCon(listener, remoteAddr)
 
 	<-s.ctx.Done()
 }
 
-func (s *TcpMuxTransport) acceptLocalCon(listener net.Listener, localChannel chan net.Conn) {
+func (s *TcpMuxTransport) acceptLocalCon(listener net.Listener, remoteAddr string) {
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -378,11 +371,11 @@ func (s *TcpMuxTransport) acceptLocalCon(listener net.Listener, localChannel cha
 			tcpConn.SetKeepAlivePeriod(s.config.KeepAlive)
 
 			select {
-			case localChannel <- conn:
+			case s.localChan <- LocalTCPConn{conn: conn, remoteAddr: remoteAddr}:
 				s.logger.Debugf("accepted incoming TCP connection from %s", tcpConn.RemoteAddr().String())
 
 			default: // channel is full, discard the connection
-				s.logger.Warnf("channel with listener %s is full, discarding TCP connection from %s", listener.Addr().String(), tcpConn.LocalAddr().String())
+				s.logger.Warnf("local listener channel is full, discarding TCP connection from %s", tcpConn.LocalAddr().String())
 				tcpConn.Close()
 			}
 
@@ -391,58 +384,52 @@ func (s *TcpMuxTransport) acceptLocalCon(listener net.Listener, localChannel cha
 
 }
 
-func (s *TcpMuxTransport) handleLocalChan(localChan chan net.Conn, remoteAddr string) {
-	next := make(chan struct{})
-
-	for tunnelConn := range s.tunnelChannel {
-		session, err := smux.Client(tunnelConn, s.smuxConfig)
-		if err != nil {
-			s.logger.Errorf("failed to create MUX session for connection %s: %v", tunnelConn.RemoteAddr().String(), err)
-			tunnelConn.Close()
-			return
-		}
-		go s.handleSession(session, localChan, remoteAddr, next)
-		<-next
+func (s *TcpMuxTransport) handleTunConn(tunnelConn net.Conn) {
+	session, err := smux.Client(tunnelConn, s.smuxConfig)
+	if err != nil {
+		s.logger.Errorf("failed to create MUX session for connection %s: %v", tunnelConn.RemoteAddr().String(), err)
+		tunnelConn.Close()
+		return
 	}
+	s.handleSession(session)
 }
 
-func (s *TcpMuxTransport) handleSession(session *smux.Session, localChan chan net.Conn, remoteAddr string, next chan struct{}) {
+func (s *TcpMuxTransport) handleSession(session *smux.Session) {
 	counter := 0
 	done := make(chan struct{}, s.config.MuxCon)
+	s.muxMutex.Lock()
 
-	for incomingConn := range localChan {
+	for incomingConn := range s.localChan {
 		stream, err := session.OpenStream()
 		if err != nil {
 			s.logger.Errorf("failed to open a new mux stream: %v", err)
 			if err := session.Close(); err != nil {
 				s.logger.Errorf("failed to close mux stream: %v", err)
 			}
-			localChan <- incomingConn // back to local channel
-			next <- struct{}{}
+			s.localChan <- incomingConn // back to local channel
 			return
 		}
 
 		// Send the target port over the tunnel connection
-		if err := utils.SendBinaryString(stream, remoteAddr); err != nil {
-			s.logger.Errorf("failed to send address %v over stream: %v", remoteAddr, err)
-			localChan <- incomingConn // back to local channel
+		if err := utils.SendBinaryString(stream, incomingConn.remoteAddr); err != nil {
+			s.logger.Errorf("failed to send address %v over stream: %v", incomingConn.remoteAddr, err)
+			s.localChan <- incomingConn // back to local channel
 			if err := session.Close(); err != nil {
 				s.logger.Errorf("failed to close mux stream: %v", err)
 			}
-			next <- struct{}{}
 			return
 		}
 
 		// Handle data exchange between connections
 		go func() {
-			utils.TCPConnectionHandler(stream, incomingConn, s.logger, s.usageMonitor, incomingConn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
+			utils.TCPConnectionHandler(stream, incomingConn.conn, s.logger, s.usageMonitor, incomingConn.conn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
 			done <- struct{}{}
 		}()
 
 		counter += 1
 
 		if counter == s.config.MuxCon {
-			next <- struct{}{}
+			s.muxMutex.Unlock()
 
 			err = utils.SendBinaryString(s.controlChannel, s.chanSignal)
 			if err != nil {
@@ -458,7 +445,7 @@ func (s *TcpMuxTransport) handleSession(session *smux.Session, localChan chan ne
 			close(done)
 
 			if err := session.Close(); err != nil {
-				s.logger.Errorf("failed to close mux stream after mux completed: %v", err)
+				s.logger.Errorf("failed to close mux stream after session completed: %v", err)
 			}
 			return
 		}

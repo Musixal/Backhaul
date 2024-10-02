@@ -58,8 +58,8 @@ func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logru
 	client := &TcpMuxTransport{
 		smuxConfig: &smux.Config{
 			Version:           config.MuxVersion,
-			KeepAliveInterval: 10 * time.Second,
-			KeepAliveTimeout:  30 * time.Second,
+			KeepAliveInterval: 20 * time.Second,
+			KeepAliveTimeout:  40 * time.Second,
 			MaxFrameSize:      config.MaxFrameSize,
 			MaxReceiveBuffer:  config.MaxReceiveBuffer,
 			MaxStreamBuffer:   config.MaxStreamBuffer,
