@@ -36,3 +36,4 @@ dist/
 *.json
 server.*
 backhaul
+*.log
