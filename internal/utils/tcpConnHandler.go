@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"errors"
 	"io"
 	"net"
 
@@ -9,9 +10,6 @@ import (
 )
 
 func TCPConnectionHandler(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
-	defer from.Close()
-	defer to.Close()
-
 	done := make(chan struct{})
 
 	go func() {
@@ -22,21 +20,50 @@ func TCPConnectionHandler(from net.Conn, to net.Conn, logger *logrus.Logger, usa
 	transferData(to, from, logger, usage, remotePort, sniffer)
 
 	<-done
+
+	from.Close()
+	to.Close()
 }
 
-// Using io.Copy for efficient data transfer
+// Using direct Read and Write for transferring data
 func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
-	defer from.Close()
-	defer to.Close()
+	buf := make([]byte, 16*1024) // 16K
+	for {
+		// Read data from the source connection
+		r, err := from.Read(buf)
+		if err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+				logger.Trace("reader stream closed or EOF received")
+			} else {
+				logger.Trace("unable to read from the connection: ", err)
+			}
 
-	bytesCopied, err := io.Copy(to, from)
-	if err != nil {
-		logger.Trace("error during data transfer: ", err)
+			from.Close()
+			to.Close()
+			return
+		}
+
+		totalWritten := 0
+		for totalWritten < r {
+			// Write data to the destination connection
+			w, err := to.Write(buf[totalWritten:r])
+			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					logger.Trace("writer stream closed or EOF received")
+				} else {
+					logger.Trace("unable to write to the connection: ", err)
+				}
+				from.Close()
+				to.Close()
+				break
+			}
+			totalWritten += w
+		}
+
+		logger.Tracef("read data: %d bytes, written data: %d bytes", r, totalWritten)
+		if sniffer {
+			usage.AddOrUpdatePort(remotePort, uint64(totalWritten))
+		}
 	}
 
-	logger.Tracef("data transferred: %d bytes", bytesCopied)
-
-	if sniffer {
-		usage.AddOrUpdatePort(remotePort, uint64(bytesCopied))
-	}
 }
