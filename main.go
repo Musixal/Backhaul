@@ -19,7 +19,7 @@ var (
 )
 
 // Define the version of the application
-const version = "v0.4.0"
+const version = "v0.4.1"
 
 func getLastModTime(file string) (time.Time, error) {
 	absPath, _ := filepath.Abs(file)
