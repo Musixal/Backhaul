@@ -3,9 +3,19 @@ package utils
 import (
 	"fmt"
 	"runtime"
+	"time"
 )
 
 func PrintStats() {
+	ticker := time.NewTicker(time.Second * 2)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		printStats()
+	}
+
+}
+func printStats() {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
 
