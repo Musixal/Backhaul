@@ -111,3 +111,27 @@ func SendWebSocketInt(conn *websocket.Conn, port uint16) error {
 
 	return nil
 }
+
+func SendBinaryByte(conn net.Conn, message byte) error {
+	// Create a 1-byte buffer and send the message
+	messageBuf := [1]byte{message}
+
+	// Send the buffer over the connection
+	if _, err := conn.Write(messageBuf[:]); err != nil {
+		return fmt.Errorf("failed to send message: %w", err)
+	}
+
+	// Successful
+	return nil
+}
+
+func ReceiveBinaryByte(conn net.Conn) (byte, error) {
+	var messageBuf [1]byte
+
+	// Read the message data into the buffer
+	if _, err := io.ReadFull(conn, messageBuf[:]); err != nil {
+		return 0, fmt.Errorf("failed to read message: %w", err)
+	}
+	// Convert the message buffer to a string and return it
+	return messageBuf[0], nil
+}

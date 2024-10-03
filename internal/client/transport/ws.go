@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -31,8 +32,6 @@ type WsTransport struct {
 	restartMutex      sync.Mutex
 	activeMu          sync.Mutex
 	usageMonitor      *web.Usage
-	heartbeatSig      string
-	chanSignal        string
 	activeConnections int
 }
 type WsConfig struct {
@@ -62,8 +61,6 @@ func NewWSClient(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 		cancel:            cancel,
 		logger:            logger,
 		controlChannel:    nil, // will be set when a control connection is established
-		heartbeatSig:      "0", // Default heartbeat signal
-		chanSignal:        "1", // Default channel signal
 		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 		activeConnections: 0,
 		activeMu:          sync.Mutex{},
@@ -147,7 +144,7 @@ connectLoop:
 }
 
 func (c *WsTransport) channelListener() {
-	msgChan := make(chan string, 100)
+	msgChan := make(chan byte, 100)
 	errChan := make(chan error, 100)
 
 	// Goroutine to handle the blocking ReceiveBinaryString
@@ -158,7 +155,7 @@ func (c *WsTransport) channelListener() {
 				errChan <- err
 				return
 			}
-			msgChan <- string(msg)
+			msgChan <- msg[0]
 		}
 	}()
 	// Main loop to listen for context cancellation or received messages
@@ -169,13 +166,13 @@ func (c *WsTransport) channelListener() {
 			return
 		case msg := <-msgChan:
 			switch msg {
-			case c.chanSignal:
+			case utils.SG_Chan:
 				c.logger.Debug("channel signal received, initiating tunnel dialer")
 				go c.tunnelDialer()
-			case c.heartbeatSig:
+			case utils.SG_HB:
 				c.logger.Debug("heartbeat signal received successfully")
 			default:
-				c.logger.Errorf("unexpected response from channel: %s. Restarting client...", msg)
+				c.logger.Errorf("unexpected response from channel: %v. Restarting client...", msg)
 				go c.Restart()
 				return
 			}
@@ -226,11 +223,13 @@ loop: // loop for reading ping or addr
 				return
 			}
 
-			remoteAddr := string(remoteAddrBytes)
-			if remoteAddr == "PING" {
-				c.logger.Trace("ping recieved from the server")
+			if bytes.Equal(remoteAddrBytes, []byte{utils.SG_Ping}) {
+				c.logger.Trace("ping received from the server")
 				continue loop
 			}
+
+			remoteAddr := string(remoteAddrBytes)
+
 			go c.localDialer(tunnelCon, remoteAddr)
 			return
 		}

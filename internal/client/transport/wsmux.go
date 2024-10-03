@@ -33,8 +33,6 @@ type WsMuxTransport struct {
 	usageMonitor      *web.Usage
 	activeMu          sync.Mutex
 	restartMutex      sync.Mutex
-	heartbeatSig      string
-	chanSignal        string
 	activeConnections int
 }
 type WsMuxConfig struct {
@@ -76,8 +74,6 @@ func NewWSMuxClient(parentCtx context.Context, config *WsMuxConfig, logger *logr
 		cancel:            cancel,
 		logger:            logger,
 		controlChannel:    nil, // will be set when a control connection is established
-		heartbeatSig:      "0", // Default heartbeat signal
-		chanSignal:        "1", // Default channel signal
 		activeConnections: 0,
 		activeMu:          sync.Mutex{},
 		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
@@ -163,7 +159,7 @@ connectLoop:
 }
 
 func (c *WsMuxTransport) channelListener() {
-	msgChan := make(chan string, 100)
+	msgChan := make(chan byte, 100)
 	errChan := make(chan error, 100)
 
 	// Goroutine to handle the blocking ReceiveBinaryString
@@ -174,7 +170,7 @@ func (c *WsMuxTransport) channelListener() {
 				errChan <- err
 				return
 			}
-			msgChan <- string(msg)
+			msgChan <- msg[0]
 		}
 	}()
 
@@ -186,13 +182,13 @@ func (c *WsMuxTransport) channelListener() {
 
 		case msg := <-msgChan:
 			switch msg {
-			case c.chanSignal:
+			case utils.SG_Chan:
 				c.logger.Debug("channel signal received, initiating tunnel dialer")
 				go c.tunnelDialer()
-			case c.heartbeatSig:
+			case utils.SG_HB:
 				c.logger.Debug("heartbeat received successfully")
 			default:
-				c.logger.Errorf("unexpected response from control channel: %s. Restarting client...", msg)
+				c.logger.Errorf("unexpected response from control channel: %v. Restarting client...", msg)
 				go c.Restart()
 				return
 

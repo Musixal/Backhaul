@@ -32,8 +32,6 @@ type WsMuxTransport struct {
 	controlChannel *websocket.Conn
 	usageMonitor   *web.Usage
 	restartMutex   sync.Mutex
-	heartbeatSig   string
-	chanSignal     string
 }
 
 type WsMuxConfig struct {
@@ -87,8 +85,6 @@ func NewWSMuxServer(parentCtx context.Context, config *WsMuxConfig, logger *logr
 		localChan:      make(chan LocalTCPConn, config.ChannelSize),
 		getNewConnChan: make(chan struct{}, config.ChannelSize),
 		controlChannel: nil, // will be set when a control connection is established
-		heartbeatSig:   "0", // Default heartbeat signal
-		chanSignal:     "1", // Default channel signal
 		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
@@ -150,7 +146,7 @@ func (s *WsMuxTransport) getClosedSignal() {
 
 		case result := <-resultChan:
 			if result.err != nil {
-				s.logger.Errorf("failed to receive message from tunnel connection: %v", result.err)
+				s.logger.Errorf("failed to receive message from channel connection: %v", result.err)
 				go s.Restart()
 				return
 			}
@@ -203,7 +199,8 @@ func (s *WsMuxTransport) heartbeat() {
 				go s.Restart()
 				return
 			}
-			err := s.controlChannel.WriteMessage(websocket.TextMessage, []byte(s.heartbeatSig))
+
+			err := s.controlChannel.WriteMessage(websocket.BinaryMessage, []byte{utils.SG_HB})
 			if err != nil {
 				s.logger.Errorf("failed to send heartbeat signal. Error: %v. Restarting server...", err)
 				go s.Restart()
@@ -212,7 +209,7 @@ func (s *WsMuxTransport) heartbeat() {
 			s.logger.Debug("heartbeat signal sent successfully")
 
 		case <-s.getNewConnChan:
-			err := s.controlChannel.WriteMessage(websocket.TextMessage, []byte(s.chanSignal))
+			err := s.controlChannel.WriteMessage(websocket.BinaryMessage, []byte{utils.SG_Chan})
 			if err != nil {
 				s.logger.Error("error sending channel signal, attempting to restart server...")
 				go s.Restart()

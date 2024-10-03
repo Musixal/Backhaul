@@ -25,8 +25,6 @@ type TcpTransport struct {
 	controlChannel net.Conn
 	restartMutex   sync.Mutex
 	usageMonitor   *web.Usage
-	heartbeatSig   string
-	chanSignal     string
 }
 
 type TcpConfig struct {
@@ -56,8 +54,6 @@ func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		logger:         logger,
 		tunnelChannel:  make(chan net.Conn, config.ChannelSize),
 		controlChannel: nil, // will be set when a control connection is established
-		heartbeatSig:   "0", // Default heartbeat signal
-		chanSignal:     "1", // Default channel signal
 		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
@@ -193,7 +189,7 @@ func (s *TcpTransport) monitorControlChannel() {
 				return
 			}
 
-			err := utils.SendBinaryString(s.controlChannel, s.heartbeatSig)
+			err := utils.SendBinaryByte(s.controlChannel, utils.SG_HB)
 			if err != nil {
 				s.logger.Error("failed to send heartbeat signal, attempting to restart server...")
 				go s.Restart()
@@ -203,7 +199,7 @@ func (s *TcpTransport) monitorControlChannel() {
 
 		case result := <-resultChan:
 			if result.err != nil {
-				s.logger.Errorf("failed to receive message from tunnel connection: %v", result.err)
+				s.logger.Errorf("failed to receive message from channel connection: %v", result.err)
 				go s.Restart()
 				return
 			}
@@ -358,7 +354,7 @@ func (s *TcpTransport) acceptLocalCon(listener net.Listener, localChannel chan n
 
 			s.logger.Debugf("accepted incoming TCP connection from %s", tcpConn.RemoteAddr().String())
 
-			err = utils.SendBinaryString(s.controlChannel, s.chanSignal)
+			err = utils.SendBinaryByte(s.controlChannel, utils.SG_Chan)
 			if err != nil {
 				s.logger.Error("error sending channel signal, attempting to restart server...")
 				go s.Restart()

@@ -30,8 +30,6 @@ type WsTransport struct {
 	restartMutex   sync.Mutex
 	chanMu         sync.Mutex
 	usageMonitor   *web.Usage
-	heartbeatSig   string
-	chanSignal     string
 }
 
 type WsConfig struct {
@@ -72,8 +70,6 @@ func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 		tunnelChannel:  make(chan TunnelChannel, config.ChannelSize),
 		getNewConnChan: make(chan struct{}, config.ChannelSize),
 		controlChannel: nil, // will be set when a control connection is established
-		heartbeatSig:   "0", // Default heartbeat signal
-		chanSignal:     "1", // Default channel signal
 		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
@@ -134,7 +130,7 @@ func (s *WsTransport) getClosedSignal() {
 
 		case result := <-resultChan:
 			if result.err != nil {
-				s.logger.Errorf("failed to receive message from tunnel connection: %v", result.err)
+				s.logger.Errorf("failed to receive message from channel connection: %v", result.err)
 				go s.Restart()
 				return
 			}
@@ -188,7 +184,7 @@ func (s *WsTransport) heartbeat() {
 				return
 			}
 			s.chanMu.Lock() // race condition vs getNewConnection func
-			err := s.controlChannel.WriteMessage(websocket.TextMessage, []byte(s.heartbeatSig))
+			err := s.controlChannel.WriteMessage(websocket.BinaryMessage, []byte{utils.SG_HB})
 			s.chanMu.Unlock()
 			if err != nil {
 				s.logger.Errorf("Failed to send heartbeat signal. Error: %v. Restarting server...", err)
@@ -208,7 +204,7 @@ func (s *WsTransport) getNewConnection() {
 
 		case <-s.getNewConnChan:
 			s.chanMu.Lock()
-			err := s.controlChannel.WriteMessage(websocket.TextMessage, []byte(s.chanSignal))
+			err := s.controlChannel.WriteMessage(websocket.BinaryMessage, []byte{utils.SG_Chan})
 			s.chanMu.Unlock()
 			if err != nil {
 				s.logger.Error("error sending channel signal, attempting to restart server...")
@@ -436,7 +432,7 @@ func (s *WsTransport) pingSender(conn *TunnelChannel) {
 				return
 			}
 
-			if err := conn.conn.WriteMessage(websocket.TextMessage, []byte("PING")); err != nil {
+			if err := conn.conn.WriteMessage(websocket.BinaryMessage, []byte{utils.SG_Ping}); err != nil {
 				conn.mu.Unlock()
 				conn.conn.Close()
 				return

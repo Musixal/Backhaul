@@ -28,8 +28,6 @@ type TcpMuxTransport struct {
 	controlChannel net.Conn
 	usageMonitor   *web.Usage
 	restartMutex   sync.Mutex
-	heartbeatSig   string
-	chanSignal     string
 }
 
 type TcpMuxConfig struct {
@@ -74,8 +72,6 @@ func NewTcpMuxServer(parentCtx context.Context, config *TcpMuxConfig, logger *lo
 		tunnelChan:     make(chan *smux.Session, config.ChannelSize),
 		localChan:      make(chan LocalTCPConn, config.ChannelSize),
 		controlChannel: nil, // will be set when a control connection is established
-		heartbeatSig:   "0", // Default heartbeat signal
-		chanSignal:     "1", // Default channel signal
 		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
@@ -145,7 +141,7 @@ func (s *TcpMuxTransport) monitorControlChannel() {
 				return
 			}
 
-			err := utils.SendBinaryString(s.controlChannel, s.heartbeatSig)
+			err := utils.SendBinaryByte(s.controlChannel, utils.SG_HB)
 			if err != nil {
 				s.logger.Error("failed to send heartbeat signal, attempting to restart server...")
 				go s.Restart()
@@ -155,7 +151,7 @@ func (s *TcpMuxTransport) monitorControlChannel() {
 
 		case result := <-resultChan:
 			if result.err != nil {
-				s.logger.Errorf("failed to receive message from tunnel connection: %v", result.err)
+				s.logger.Errorf("failed to receive message from channel connection: %v", result.err)
 				go s.Restart()
 				return
 			}
@@ -453,7 +449,7 @@ func (s *TcpMuxTransport) handleSession(session *smux.Session, next chan struct{
 			if counter == s.config.MuxCon {
 				next <- struct{}{}
 
-				err = utils.SendBinaryString(s.controlChannel, s.chanSignal)
+				err = utils.SendBinaryByte(s.controlChannel, utils.SG_Chan)
 				if err != nil {
 					s.logger.Error("error sending channel signal, attempting to restart server...")
 					go s.Restart()

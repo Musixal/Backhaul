@@ -27,8 +27,6 @@ type TcpMuxTransport struct {
 	usageMonitor      *web.Usage
 	activeMu          sync.Mutex
 	restartMutex      sync.Mutex
-	heartbeatSig      string
-	chanSignal        string
 	activeConnections int
 }
 
@@ -70,8 +68,6 @@ func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logru
 		cancel:            cancel,
 		logger:            logger,
 		controlChannel:    nil, // will be set when a control connection is established
-		heartbeatSig:      "0", // Default heartbeat signal
-		chanSignal:        "1", // Default channel signal
 		activeConnections: 0,
 		activeMu:          sync.Mutex{},
 		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
@@ -191,13 +187,13 @@ func (c *TcpMuxTransport) closeControlChannel(reason string) {
 }
 
 func (c *TcpMuxTransport) channelListener() {
-	msgChan := make(chan string, 100)
+	msgChan := make(chan byte, 100)
 	errChan := make(chan error, 100)
 
 	// Goroutine to handle the blocking ReceiveBinaryString
 	go func() {
 		for {
-			msg, err := utils.ReceiveBinaryString(c.controlChannel)
+			msg, err := utils.ReceiveBinaryByte(c.controlChannel)
 			if err != nil {
 				errChan <- err
 				return
@@ -214,13 +210,13 @@ func (c *TcpMuxTransport) channelListener() {
 			return
 		case msg := <-msgChan:
 			switch msg {
-			case c.chanSignal:
+			case utils.SG_Chan:
 				c.logger.Debug("channel signal received, initiating tunnel dialer")
 				go c.tunnelDialer()
-			case c.heartbeatSig:
+			case utils.SG_HB:
 				c.logger.Debug("heartbeat signal received successfully")
 			default:
-				c.logger.Errorf("unexpected response from channel: %s. Restarting client...", msg)
+				c.logger.Errorf("unexpected response from channel: %v. Restarting client...", msg)
 				go c.Restart()
 				return
 			}
