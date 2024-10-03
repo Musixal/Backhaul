@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -134,7 +135,7 @@ func (s *WsTransport) getClosedSignal() {
 				go s.Restart()
 				return
 			}
-			if string(result.message) == "closed" {
+			if bytes.Equal(result.message, []byte{utils.SG_Closed}) {
 				s.logger.Info("control channel has been closed by the client")
 				go s.Restart()
 				return

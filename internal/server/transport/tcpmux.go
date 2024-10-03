@@ -118,14 +118,14 @@ func (s *TcpMuxTransport) monitorControlChannel() {
 
 	// Channel to receive the message or error
 	resultChan := make(chan struct {
-		message string
+		message byte
 		err     error
 	})
 
 	go func() {
-		message, err := utils.ReceiveBinaryString(s.controlChannel)
+		message, err := utils.ReceiveBinaryByte(s.controlChannel)
 		resultChan <- struct {
-			message string
+			message byte
 			err     error
 		}{message, err}
 	}()
@@ -155,7 +155,7 @@ func (s *TcpMuxTransport) monitorControlChannel() {
 				go s.Restart()
 				return
 			}
-			if result.message == "closed" {
+			if result.message == utils.SG_Closed {
 				s.logger.Info("control channel has been closed by the client")
 				go s.Restart()
 				return

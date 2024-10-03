@@ -116,7 +116,7 @@ func (c *WsMuxTransport) Restart() {
 
 func (c *WsMuxTransport) closeControlChannel(reason string) {
 	if c.controlChannel != nil {
-		_ = c.controlChannel.WriteMessage(websocket.TextMessage, []byte("closed"))
+		_ = c.controlChannel.WriteMessage(websocket.BinaryMessage, []byte{utils.SG_Closed})
 		c.controlChannel.Close()
 		c.logger.Infof("control channel closed due to %s", reason)
 	}

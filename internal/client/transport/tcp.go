@@ -97,7 +97,7 @@ func (c *TcpTransport) Restart() {
 
 func (c *TcpTransport) closeControlChannel(reason string) {
 	if c.controlChannel != nil {
-		_ = utils.SendBinaryString(c.controlChannel, "closed")
+		_ = utils.SendBinaryByte(c.controlChannel, utils.SG_Closed)
 		c.controlChannel.Close()
 		c.logger.Debugf("control channel closed due to %s", reason)
 	}
