@@ -17,8 +17,12 @@ builds:
 
 
 archives:
-   - format: tar.gz
-     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - !README.md  # Exclude README.md
+      - !LICENSE    # Exclude LICENSE
+      - ./          # Include all other files
 
 release:
    github:
