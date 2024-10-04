@@ -20,9 +20,6 @@ func TCPConnectionHandler(from net.Conn, to net.Conn, logger *logrus.Logger, usa
 	transferData(to, from, logger, usage, remotePort, sniffer)
 
 	<-done
-
-	from.Close()
-	to.Close()
 }
 
 // Using direct Read and Write for transferring data
@@ -37,7 +34,6 @@ func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.
 			} else {
 				logger.Trace("unable to read from the connection: ", err)
 			}
-
 			from.Close()
 			to.Close()
 			return
@@ -55,7 +51,8 @@ func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.
 				}
 				from.Close()
 				to.Close()
-				break
+				return
+
 			}
 			totalWritten += w
 		}
