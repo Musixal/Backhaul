@@ -56,7 +56,9 @@ func NewQuicClient(parentCtx context.Context, config *QuicConfig, logger *logrus
 	// Initialize the TcpTransport struct
 	client := &QuicTransport{
 		quicConfig: &quic.Config{
-			Allow0RTT: true,
+			Allow0RTT:       true,
+			KeepAlivePeriod: 20 * time.Second,
+			MaxIdleTimeout:  1600 * time.Second,
 		},
 		config:            config,
 		parentctx:         parentCtx,
@@ -100,20 +102,17 @@ func (c *QuicTransport) Restart() {
 	c.activeConnections = 0
 	c.activeMu = sync.Mutex{}
 
-	go c.ChannelDialer()
+	go c.ChannelDialer(true)
 
 }
 
-func (c *QuicTransport) ChannelDialer() {
-	// for  webui
-	if c.config.WebPort > 0 {
+func (c *QuicTransport) ChannelDialer(coldStart bool) {
+	if coldStart && c.config.WebPort > 0 {
 		go c.usageMonitor.Monitor()
 	}
-
 	c.config.TunnelStatus = "Disconnected (Quic)"
 	c.logger.Info("attempting to establish a new quic control channel connection...")
 
-loop:
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -131,14 +130,14 @@ loop:
 			if err != nil {
 				c.logger.Error("failed to open stream for channel handshake: ", err)
 				qConn.CloseWithError(1, "failed to open stream")
-				return
+				continue
 			}
 			err = utils.SendBinaryString(stream, c.config.Token)
 			if err != nil {
 				c.logger.Errorf("failed to send security token: %v", err)
 				stream.Close()
 				qConn.CloseWithError(1, "failed to send security token")
-				continue loop
+				continue
 			}
 
 			// Set a read deadline for the token response
@@ -146,7 +145,7 @@ loop:
 				c.logger.Errorf("failed to set read deadline: %v", err)
 				stream.Close()
 				qConn.CloseWithError(1, "failed to set read deadline")
-				continue loop
+				continue
 			}
 			// Receive response
 			message, err := utils.ReceiveBinaryString(stream)
@@ -159,7 +158,7 @@ loop:
 				stream.Close()
 				qConn.CloseWithError(1, "close on timeout/response deadline")
 				time.Sleep(c.config.RetryInterval)
-				continue loop
+				continue
 			}
 			// Resetting the deadline (removes any existing deadline)
 			stream.SetReadDeadline(time.Time{})
@@ -174,14 +173,17 @@ loop:
 				c.config.TunnelStatus = "Connected (Quic)"
 
 				go c.channelListener()
-				go c.poolChecker()
+
+				if coldStart {
+					go c.poolChecker()
+				}
 
 				return
 			} else {
 				c.logger.Errorf("invalid token received. Expected: %s, Received: %s. Retrying...", c.config.Token, message)
 				stream.Close()
 				qConn.CloseWithError(1, "invalid token error")
-				continue loop
+				continue
 			}
 		}
 	}
@@ -200,12 +202,12 @@ func (c *QuicTransport) channelListener() {
 	stream, err := c.controlChannel.OpenStreamSync(context.Background())
 	if err != nil {
 		c.logger.Error("failed to open stream in control channel")
-		go c.Restart()
+		go c.ChannelDialer(false)
 		return
 	}
 
-	tickerPing := time.NewTicker(1 * time.Second)
-	tickerTimeout := time.NewTicker(3 * time.Second)
+	tickerPing := time.NewTicker(3 * time.Second)
+	tickerTimeout := time.NewTicker(300 * time.Second)
 	defer tickerPing.Stop()
 	defer tickerTimeout.Stop()
 
@@ -218,6 +220,7 @@ func (c *QuicTransport) channelListener() {
 		for {
 			_, err := stream.Read(msg)
 			if err != nil {
+				c.logger.Error("here: ", err)
 				errChan <- err
 				return
 			}
@@ -235,16 +238,23 @@ func (c *QuicTransport) channelListener() {
 			return
 
 		case <-tickerPing.C:
-			err := utils.SendBinaryByte(stream, utils.SG_HB)
+			streamtest, err := c.controlChannel.OpenStreamSync(context.Background())
 			if err != nil {
-				c.logger.Error("failed to send keepalive")
-				go c.Restart()
+				c.logger.Error("failed to open stream in control channel")
+				go c.ChannelDialer(false)
 				return
 			}
-			c.logger.Debug("heartbeat signal sended successfully")
+			err = utils.SendBinaryByte(streamtest, utils.SG_HB)
+			if err != nil {
+				c.logger.Error("failed to send keepalive")
+				go c.ChannelDialer(false)
+				return
+			}
+			c.logger.Info("heartbeat signal sended successfully")
+
 		case <-tickerTimeout.C:
 			c.logger.Error("keepalive timeout")
-			go c.Restart()
+			go c.ChannelDialer(false)
 			return
 
 		case msg := <-msgChan:
@@ -257,13 +267,13 @@ func (c *QuicTransport) channelListener() {
 				tickerTimeout.Reset(3 * time.Second)
 			default:
 				c.logger.Errorf("unexpected response from channel: %v. Restarting client...", msg)
-				go c.Restart()
+				go c.ChannelDialer(false)
 				return
 			}
 		case err := <-errChan:
 			// Handle errors from the control channel
-			c.logger.Error("error receiving channel signal, restarting client: ", err)
-			go c.Restart()
+			c.logger.Error("failed to receive channel signal, restarting client: ", err)
+			go c.ChannelDialer(false)
 			return
 		}
 	}

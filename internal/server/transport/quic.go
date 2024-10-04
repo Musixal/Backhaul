@@ -31,6 +31,7 @@ type QuicTransport struct {
 	controlChannel quic.Connection
 	usageMonitor   *web.Usage
 	restartMutex   sync.Mutex
+	coldStart      bool
 }
 
 type QuicConfig struct {
@@ -58,7 +59,9 @@ func NewQuicServer(parentCtx context.Context, config *QuicConfig, logger *logrus
 	// Initialize the TcpTransport struct
 	server := &QuicTransport{
 		quicConfig: &quic.Config{
-			Allow0RTT: true,
+			Allow0RTT:       true,
+			KeepAlivePeriod: 20 * time.Second,
+			MaxIdleTimeout:  1600 * time.Second,
 		},
 		config:         config,
 		parentctx:      parentCtx,
@@ -70,6 +73,7 @@ func NewQuicServer(parentCtx context.Context, config *QuicConfig, logger *logrus
 		localChan:      make(chan LocalTCPConn, config.ChannelSize),
 		controlChannel: nil, // will be set when a control connection is established
 		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
+		coldStart:      true,
 	}
 
 	return server
@@ -105,6 +109,7 @@ func (s *QuicTransport) Restart() {
 	s.controlChannel = nil
 	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.config.Sniffer, &s.config.TunnelStatus, s.logger)
 	s.config.TunnelStatus = ""
+	s.coldStart = true
 
 	go s.TunnelListener()
 
@@ -118,8 +123,10 @@ func (s *QuicTransport) keepalive() {
 		return
 	}
 
-	tickerPing := time.NewTicker(1 * time.Second)
-	tickerTimeout := time.NewTicker(3 * time.Second)
+	s.coldStart = false
+
+	tickerPing := time.NewTicker(3 * time.Second)
+	tickerTimeout := time.NewTicker(300 * time.Second)
 	defer tickerPing.Stop()
 	defer tickerTimeout.Stop()
 
@@ -142,6 +149,10 @@ func (s *QuicTransport) keepalive() {
 					message byte
 					err     error
 				}{message[0], err}
+
+				if err != nil {
+					return
+				}
 			}
 		}
 	}()
@@ -154,40 +165,47 @@ func (s *QuicTransport) keepalive() {
 			err = utils.SendBinaryByte(stream, utils.SG_Chan)
 			if err != nil {
 				s.logger.Error("error sending channel signal, attempting to restart server...")
-				go s.Restart()
+				s.controlChannel = nil
 				return
 			}
 		case <-tickerPing.C:
-			err := utils.SendBinaryByte(stream, utils.SG_HB)
+			streamtest, err := s.controlChannel.AcceptStream(context.Background())
 			if err != nil {
-				s.logger.Error("failed to send keepalive")
+				s.logger.Error("failed to open stream for keepalive")
 				go s.Restart()
 				return
 			}
-			s.logger.Debug("heartbeat signal sended successfully")
+			err = utils.SendBinaryByte(streamtest, utils.SG_HB)
+			if err != nil {
+				s.logger.Error("failed to send keepalive")
+				s.controlChannel = nil
+				return
+			}
+			s.logger.Info("heartbeat signal sended successfully")
 		case <-tickerTimeout.C:
 			s.logger.Error("keepalive timeout")
-			go s.Restart()
+			s.controlChannel = nil
 			return
 
 		case result := <-resultChan:
 			if result.err != nil {
 				s.logger.Errorf("failed to receive message from channel connection: %v", result.err)
-				go s.Restart()
+				s.controlChannel = nil
 				return
 			}
 
 			switch result.message {
 			case utils.SG_HB:
-				s.logger.Debug("heartbeat signal received successfully")
+				s.logger.Info("heartbeat signal received successfully")
 				tickerTimeout.Reset(3 * time.Second)
+
 			case utils.SG_Closed:
 				s.logger.Info("control channel has been closed by the client")
-				go s.Restart()
+				s.controlChannel = nil
 				return
 			default:
 				s.logger.Errorf("unexpected response from channel: %v. Restarting client...", result.message)
-				go s.Restart()
+				s.controlChannel = nil
 				return
 			}
 
@@ -272,9 +290,11 @@ func (s *QuicTransport) channelHandshake(qConn quic.Connection) {
 	s.logger.Info("QUIC control channel successfully established.")
 
 	// call the functions
+	if s.coldStart {
+		go s.portConfigReader()
+		go s.handleTunConn()
+	}
 	go s.keepalive()
-	go s.portConfigReader()
-	go s.handleTunConn()
 
 	s.config.TunnelStatus = "Connected (QUIC)"
 }

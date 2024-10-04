@@ -133,7 +133,7 @@ func (c *Client) Start() {
 			SnifferLog:     c.config.SnifferLog,
 		}
 		quicClient := transport.NewQuicClient(c.ctx, quicConfig, c.logger)
-		go quicClient.ChannelDialer()
+		go quicClient.ChannelDialer(true)
 
 	} else {
 		c.logger.Fatal("invalid transport type: ", c.config.Transport)
