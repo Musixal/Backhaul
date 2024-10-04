@@ -84,8 +84,8 @@ func (c *QuicTransport) Restart() {
 		c.cancel()
 	}
 
-	// Close tunnel channel connection
-	//c.closeControlChannel("restart")
+	//Close tunnel channel connection
+	c.closeControlChannel("restart")
 
 	time.Sleep(2 * time.Second)
 
@@ -119,7 +119,7 @@ loop:
 		case <-c.ctx.Done():
 			return
 		default:
-			tunnelConn, err := c.quicDialer(c.config.RemoteAddr)
+			qConn, err := c.quicDialer(c.config.RemoteAddr)
 			if err != nil {
 				c.logger.Errorf("quic channel dialer: error dialing remote address %s: %v", c.config.RemoteAddr, err)
 				time.Sleep(c.config.RetryInterval)
@@ -127,52 +127,60 @@ loop:
 			}
 
 			// Sending security token
-			stream, err := tunnelConn.OpenStreamSync(context.Background())
+			stream, err := qConn.OpenStreamSync(context.Background())
 			if err != nil {
 				c.logger.Error("failed to open stream for channel handshake: ", err)
+				qConn.CloseWithError(1, "failed to open stream")
 				return
 			}
-			_, err = stream.Write([]byte(c.config.Token))
+			err = utils.SendBinaryString(stream, c.config.Token)
 			if err != nil {
 				c.logger.Errorf("failed to send security token: %v", err)
-				//tunnelConn.Close()
+				stream.Close()
+				qConn.CloseWithError(1, "failed to send security token")
 				continue loop
 			}
 
 			// Set a read deadline for the token response
 			if err := stream.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
 				c.logger.Errorf("failed to set read deadline: %v", err)
-				//tunnelConn.Close()
+				stream.Close()
+				qConn.CloseWithError(1, "failed to set read deadline")
 				continue loop
 			}
 			// Receive response
-			message := make([]byte, 30)
-			n, err := stream.Read(message)
+			message, err := utils.ReceiveBinaryString(stream)
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					c.logger.Warn("timeout while waiting for control channel response")
 				} else {
 					c.logger.Errorf("failed to receive control channel response: %v", err)
 				}
-				//tunnelConn.Close() // Close connection on error or timeout
+				stream.Close()
+				qConn.CloseWithError(1, "close on timeout/response deadline")
 				time.Sleep(c.config.RetryInterval)
 				continue loop
 			}
 			// Resetting the deadline (removes any existing deadline)
 			stream.SetReadDeadline(time.Time{})
 
-			if string(message[:n]) == c.config.Token {
-				c.controlChannel = tunnelConn
+			if message == c.config.Token {
+				c.controlChannel = qConn
 				c.logger.Info("quic control channel established successfully")
 
+				// close stream
+				stream.Close()
+
 				c.config.TunnelStatus = "Connected (Quic)"
+
 				go c.channelListener()
 				go c.poolChecker()
-				break loop // break the loop
+
+				return
 			} else {
 				c.logger.Errorf("invalid token received. Expected: %s, Received: %s. Retrying...", c.config.Token, message)
-				//tunnelConn.Close() // Close connection if the token is invalid
-				time.Sleep(c.config.RetryInterval)
+				stream.Close()
+				qConn.CloseWithError(1, "invalid token error")
 				continue loop
 			}
 		}
@@ -180,25 +188,30 @@ loop:
 
 }
 
-// func (c *QuicTransport) closeControlChannel(reason string) {
-// 	if c.controlChannel != nil {
-// 		_ = utils.SendBinaryByte(c.controlChannel, utils.SG_Closed)
-// 		c.controlChannel.Close()
-// 		c.logger.Debugf("control channel closed due to %s", reason)
-// 	}
-// }
+func (c *QuicTransport) closeControlChannel(reason string) {
+	if c.controlChannel != nil {
+		_ = utils.SendBinaryByte(c.controlChannel, utils.SG_Closed)
+		c.controlChannel.CloseWithError(0, fmt.Sprintf("control channel closed due to %s", reason))
+		c.logger.Debugf("control channel closed due to %s", reason)
+	}
+}
 
 func (c *QuicTransport) channelListener() {
-	msgChan := make(chan byte, 100)
-	errChan := make(chan error, 100)
-
-	stream, err := c.controlChannel.AcceptStream(context.Background())
+	stream, err := c.controlChannel.OpenStreamSync(context.Background())
 	if err != nil {
 		c.logger.Error("failed to open stream in control channel")
 		go c.Restart()
 		return
 	}
+
+	tickerPing := time.NewTicker(1 * time.Second)
+	tickerTimeout := time.NewTicker(3 * time.Second)
+	defer tickerPing.Stop()
+	defer tickerTimeout.Stop()
+
 	msg := make([]byte, 1)
+	msgChan := make(chan byte, 100)
+	errChan := make(chan error, 100)
 
 	// Goroutine to handle the blocking ReceiveBinaryString
 	go func() {
@@ -212,12 +225,28 @@ func (c *QuicTransport) channelListener() {
 		}
 	}()
 
+	// close channel
+	//	defer func() { c.closeControlChannel("context cancellation") }()
+
 	// Main loop to listen for context cancellation or received messages
 	for {
 		select {
 		case <-c.ctx.Done():
-			//c.closeControlChannel("context cancellation")
 			return
+
+		case <-tickerPing.C:
+			err := utils.SendBinaryByte(stream, utils.SG_HB)
+			if err != nil {
+				c.logger.Error("failed to send keepalive")
+				go c.Restart()
+				return
+			}
+			c.logger.Debug("heartbeat signal sended successfully")
+		case <-tickerTimeout.C:
+			c.logger.Error("keepalive timeout")
+			go c.Restart()
+			return
+
 		case msg := <-msgChan:
 			switch msg {
 			case utils.SG_Chan:
@@ -225,6 +254,7 @@ func (c *QuicTransport) channelListener() {
 				go c.tunnelDialer()
 			case utils.SG_HB:
 				c.logger.Debug("heartbeat signal received successfully")
+				tickerTimeout.Reset(3 * time.Second)
 			default:
 				c.logger.Errorf("unexpected response from channel: %v. Restarting client...", msg)
 				go c.Restart()

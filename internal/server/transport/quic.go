@@ -110,16 +110,18 @@ func (s *QuicTransport) Restart() {
 
 }
 
-func (s *QuicTransport) monitorControlChannel() {
-	ticker := time.NewTicker(s.config.Heartbeat)
-	defer ticker.Stop()
-
-	stream, err := s.controlChannel.OpenStreamSync(context.Background())
+func (s *QuicTransport) keepalive() {
+	stream, err := s.controlChannel.AcceptStream(context.Background())
 	if err != nil {
-		s.logger.Error("failed to open stream for control channel")
+		s.logger.Error("failed to open stream for keepalive")
 		go s.Restart()
 		return
 	}
+
+	tickerPing := time.NewTicker(1 * time.Second)
+	tickerTimeout := time.NewTicker(3 * time.Second)
+	defer tickerPing.Stop()
+	defer tickerTimeout.Stop()
 
 	// Channel to receive the message or error
 	resultChan := make(chan struct {
@@ -128,13 +130,20 @@ func (s *QuicTransport) monitorControlChannel() {
 	})
 
 	go func() {
-		message := make([]byte, 1)
-		_, err := stream.Read(message)
+		for {
+			select {
+			case <-s.ctx.Done():
+				return
+			default:
+				message := make([]byte, 1)
+				_, err := stream.Read(message)
 
-		resultChan <- struct {
-			message byte
-			err     error
-		}{message[0], err}
+				resultChan <- struct {
+					message byte
+					err     error
+				}{message[0], err}
+			}
+		}
 	}()
 
 	for {
@@ -142,21 +151,24 @@ func (s *QuicTransport) monitorControlChannel() {
 		case <-s.ctx.Done():
 			return
 		case <-s.getNewConnChan:
-			_, err = stream.Write([]byte{utils.SG_Chan})
+			err = utils.SendBinaryByte(stream, utils.SG_Chan)
 			if err != nil {
 				s.logger.Error("error sending channel signal, attempting to restart server...")
 				go s.Restart()
 				return
 			}
-
-		case <-ticker.C:
-			_, err = stream.Write([]byte{utils.SG_HB})
+		case <-tickerPing.C:
+			err := utils.SendBinaryByte(stream, utils.SG_HB)
 			if err != nil {
-				s.logger.Error("failed to send heartbeat signal, attempting to restart server...")
+				s.logger.Error("failed to send keepalive")
 				go s.Restart()
 				return
 			}
-			s.logger.Trace("heartbeat signal sent successfully")
+			s.logger.Debug("heartbeat signal sended successfully")
+		case <-tickerTimeout.C:
+			s.logger.Error("keepalive timeout")
+			go s.Restart()
+			return
 
 		case result := <-resultChan:
 			if result.err != nil {
@@ -164,12 +176,23 @@ func (s *QuicTransport) monitorControlChannel() {
 				go s.Restart()
 				return
 			}
-			if result.message == utils.SG_Closed {
+
+			switch result.message {
+			case utils.SG_HB:
+				s.logger.Debug("heartbeat signal received successfully")
+				tickerTimeout.Reset(3 * time.Second)
+			case utils.SG_Closed:
 				s.logger.Info("control channel has been closed by the client")
 				go s.Restart()
 				return
+			default:
+				s.logger.Errorf("unexpected response from channel: %v. Restarting client...", result.message)
+				go s.Restart()
+				return
 			}
+
 		}
+
 	}
 }
 
@@ -196,55 +219,64 @@ func (s *QuicTransport) portConfigReader() {
 	}
 }
 
-func (s *QuicTransport) channelHandshake(conn quic.Connection) {
+func (s *QuicTransport) channelHandshake(qConn quic.Connection) {
 	// Set a read deadline for the token response
-	stream, err := conn.AcceptStream(context.Background())
+	stream, err := qConn.AcceptStream(context.Background())
 	if err != nil {
 		s.logger.Error("failed to open stream for channel handshake: ", err)
+		qConn.CloseWithError(1, "failed to open stream")
 		return
 	}
 
 	if err := stream.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
 		s.logger.Errorf("failed to set read deadline: %v", err)
-		//conn.Close()
+		stream.Close()
+		qConn.CloseWithError(1, "failed to set deadline")
 		return
 	}
-	msg := make([]byte, 30)
-	n, err := stream.Read(msg)
+	msg, err := utils.ReceiveBinaryString(stream)
 	if err != nil {
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			s.logger.Warn("timeout while waiting for control channel signal")
 		} else {
 			s.logger.Errorf("failed to receive control channel signal: %v", err)
 		}
-		//conn.Close() // Close connection on error or timeout
+		stream.Close()
+		qConn.CloseWithError(1, "close on timeout/response deadline")
 		return
 	}
 
 	// Resetting the deadline (removes any existing deadline)
 	stream.SetReadDeadline(time.Time{})
 
-	if string(msg[:n]) != s.config.Token {
+	if msg != s.config.Token {
 		s.logger.Warnf("invalid security token received: %s, exptected: %s", msg, s.config.Token)
+		stream.Close()
+		qConn.CloseWithError(1, "close on invalid token")
 		return
 	}
 
-	_, err = stream.Write([]byte(s.config.Token))
+	err = utils.SendBinaryString(stream, s.config.Token)
 	if err != nil {
 		s.logger.Errorf("failed to send security token: %v", err)
+		stream.Close()
+		qConn.CloseWithError(1, "failed to send security token")
 		return
 	}
 
-	s.controlChannel = conn
+	s.controlChannel = qConn
 
-	s.logger.Info("quic control channel successfully established.")
+	// close stream
+	stream.Close()
+
+	s.logger.Info("QUIC control channel successfully established.")
 
 	// call the functions
-	go s.monitorControlChannel()
+	go s.keepalive()
 	go s.portConfigReader()
 	go s.handleTunConn()
 
-	s.config.TunnelStatus = "Connected (Quic)"
+	s.config.TunnelStatus = "Connected (QUIC)"
 }
 
 func (s *QuicTransport) generateTLSConfig() *tls.Config {
@@ -265,7 +297,7 @@ func (s *QuicTransport) TunnelListener() {
 	if s.config.WebPort > 0 {
 		go s.usageMonitor.Monitor()
 	}
-	s.config.TunnelStatus = "Disconnected (Quic)"
+	s.config.TunnelStatus = "Disconnected (QUIC)"
 
 	// Create a UDP connection
 	udpAddr, err := net.ResolveUDPAddr("udp", s.config.BindAddr)

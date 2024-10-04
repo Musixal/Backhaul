@@ -115,13 +115,21 @@ func ReceiveBinaryInt(conn net.Conn) (uint16, error) {
 	return port, nil
 }
 
-func SendBinaryByte(conn net.Conn, message byte) error {
+func SendBinaryByte(conn interface{}, message byte) error {
 	// Create a 1-byte buffer and send the message
 	messageBuf := [1]byte{message}
 
-	// Send the buffer over the connection
-	if _, err := conn.Write(messageBuf[:]); err != nil {
-		return fmt.Errorf("failed to send message: %w", err)
+	switch c := conn.(type) {
+	case net.Conn:
+		if _, err := c.Write(messageBuf[:]); err != nil {
+			return fmt.Errorf("failed to read message from net.Conn: %w", err)
+		}
+	case quic.Stream:
+		if _, err := c.Write(messageBuf[:]); err != nil {
+			return fmt.Errorf("failed to read message from net.Conn: %w", err)
+		}
+	default:
+		return fmt.Errorf("unsupported connection type: %T", conn)
 	}
 
 	// Successful
@@ -131,10 +139,19 @@ func SendBinaryByte(conn net.Conn, message byte) error {
 func ReceiveBinaryByte(conn net.Conn) (byte, error) {
 	var messageBuf [1]byte
 
-	// Read the message data into the buffer
-	if _, err := io.ReadFull(conn, messageBuf[:]); err != nil {
-		return 0, fmt.Errorf("failed to read message: %w", err)
+	switch c := conn.(type) {
+	case net.Conn:
+		if _, err := io.ReadFull(c, messageBuf[:]); err != nil {
+			return 0, fmt.Errorf("failed to read message from net.Conn: %w", err)
+		}
+	case quic.Stream:
+		if _, err := io.ReadFull(c, messageBuf[:]); err != nil {
+			return 0, fmt.Errorf("failed to read message from quic.Stream: %w", err)
+		}
+	default:
+		return 0, fmt.Errorf("unsupported connection type: %T", conn)
 	}
+
 	// Convert the message buffer to a string and return it
 	return messageBuf[0], nil
 }
