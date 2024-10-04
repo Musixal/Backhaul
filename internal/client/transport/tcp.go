@@ -282,7 +282,7 @@ func (c *TcpTransport) localDialer(tcpConn net.Conn, remoteAddr string) {
 
 	c.logger.Debugf("connected to local address %s successfully", remoteAddr)
 
-	utils.TCPConnectionHandler(localConnection, tcpConn, c.logger, c.usageMonitor, port, c.config.Sniffer)
+	utils.TCPConnectionHandler(tcpConn, localConnection, c.logger, c.usageMonitor, port, c.config.Sniffer)
 }
 
 func (c *TcpTransport) tcpDialer(address string) (*net.TCPConn, error) {
