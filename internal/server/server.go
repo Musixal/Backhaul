@@ -123,6 +123,26 @@ func (s *Server) Start() {
 		wsMuxServer := transport.NewWSMuxServer(s.ctx, wsMuxConfig, s.logger)
 		go wsMuxServer.TunnelListener()
 
+	} else if s.config.Transport == config.QUIC {
+		quicConfig := &transport.QuicConfig{
+			BindAddr:    s.config.BindAddr,
+			Nodelay:     s.config.Nodelay,
+			KeepAlive:   time.Duration(s.config.Keepalive) * time.Second,
+			Heartbeat:   time.Duration(s.config.Heartbeat) * time.Second,
+			Token:       s.config.Token,
+			MuxCon:      s.config.MuxCon,
+			ChannelSize: s.config.ChannelSize,
+			Ports:       s.config.Ports,
+			Sniffer:     s.config.Sniffer,
+			WebPort:     s.config.WebPort,
+			SnifferLog:  s.config.SnifferLog,
+			TLSCertFile: s.config.TLSCertFile,
+			TLSKeyFile:  s.config.TLSKeyFile,
+		}
+
+		quicServer := transport.NewQuicServer(s.ctx, quicConfig, s.logger)
+		go quicServer.TunnelListener()
+
 	} else {
 		s.logger.Fatal("invalid transport type: ", s.config.Transport)
 	}

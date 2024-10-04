@@ -10,6 +10,7 @@ const (
 	WSS    TransportType = "wss"
 	WSMUX  TransportType = "wsmux"
 	WSSMUX TransportType = "wssmux"
+	QUIC   TransportType = "quic"
 )
 
 // ServerConfig represents the configuration for the server.
