@@ -6,30 +6,59 @@ import (
 	"io"
 	"net"
 
-	"github.com/gorilla/websocket"
+	"github.com/quic-go/quic-go"
 )
 
-// ReceivePort reads a 2-byte big-endian unsigned integer directly from the connection
-func ReceiveBinaryInt(conn net.Conn) (uint16, error) {
-	var port uint16
+func SendBinaryString(conn interface{}, message string) error {
+	// Header size
+	const headerSize = 2
 
-	// Use binary.Read to read the port directly from the connection
-	err := binary.Read(conn, binary.BigEndian, &port)
-	if err != nil {
-		return 0, fmt.Errorf("failed to read port number from connection: %w", err)
+	// Create a buffer with the appropriate size for the message
+	buf := make([]byte, headerSize+len(message))
+
+	// Encode the length of the message as a big-endian 2-byte unsigned integer
+	binary.BigEndian.PutUint16(buf[:headerSize], uint16(len(message)))
+
+	// Copy the message into the buffer after the length
+	copy(buf[headerSize:], message)
+
+	switch c := conn.(type) {
+	case net.Conn:
+		// Send the buffer over the connection
+		if _, err := c.Write(buf); err != nil {
+			return fmt.Errorf("failed to send message: %w", err)
+		}
+	case quic.Stream:
+		if _, err := c.Write(buf); err != nil {
+			return fmt.Errorf("failed to send message: %w", err)
+		}
+	default:
+		// Handle unsupported connection types
+		return fmt.Errorf("unsupported connection type: %T", conn)
 	}
-
 	// Successful
-	return port, nil
+	return nil
 }
 
-func ReceiveBinaryString(conn net.Conn) (string, error) {
-	// Create a buffer to read the first 2 bytes (the length of the message)
-	lenBuf := make([]byte, 2)
+func ReceiveBinaryString(conn interface{}) (string, error) {
+	// Header size
+	const headerSize = 2
 
-	// Read exactly 2 bytes for the message length
-	if _, err := io.ReadFull(conn, lenBuf); err != nil {
-		return "", fmt.Errorf("failed to read message length: %w", err)
+	// Create a buffer to read the first 2 bytes (the length of the message)
+	lenBuf := make([]byte, headerSize)
+
+	switch c := conn.(type) {
+	case net.Conn:
+		// Read exactly 2 bytes for the message length
+		if _, err := io.ReadFull(c, lenBuf); err != nil {
+			return "", fmt.Errorf("failed to read message length from net.Conn: %w", err)
+		}
+	case quic.Stream:
+		if _, err := io.ReadFull(c, lenBuf); err != nil {
+			return "", fmt.Errorf("failed to read message length from quic.Stream: %w", err)
+		}
+	default:
+		return "", fmt.Errorf("unsupported connection type: %T", conn)
 	}
 
 	// Decode the length of the message from the 2-byte buffer
@@ -38,10 +67,19 @@ func ReceiveBinaryString(conn net.Conn) (string, error) {
 	// Create a buffer of the appropriate size to hold the message
 	messageBuf := make([]byte, messageLength)
 
-	// Read the message data into the buffer
-	if _, err := io.ReadFull(conn, messageBuf); err != nil {
-		return "", fmt.Errorf("failed to read message: %w", err)
+	switch c := conn.(type) {
+	case net.Conn:
+		if _, err := io.ReadFull(c, messageBuf); err != nil {
+			return "", fmt.Errorf("failed to read message from net.Conn: %w", err)
+		}
+	case quic.Stream:
+		if _, err := io.ReadFull(c, messageBuf); err != nil {
+			return "", fmt.Errorf("failed to read message from quic.Stream: %w", err)
+		}
+	default:
+		return "", fmt.Errorf("unsupported connection type: %T", conn)
 	}
+
 	// Convert the message buffer to a string and return it
 	return string(messageBuf), nil
 }
@@ -63,53 +101,18 @@ func SendBinaryInt(conn net.Conn, port uint16) error {
 	return nil
 }
 
-func SendBinaryString(conn net.Conn, message string) error {
-	// Create a buffer with the appropriate size for the message
-	buf := make([]byte, 2+len(message))
+// ReceivePort reads a 2-byte big-endian unsigned integer directly from the connection
+func ReceiveBinaryInt(conn net.Conn) (uint16, error) {
+	var port uint16
 
-	// Encode the length of the message as a big-endian 2-byte unsigned integer
-	binary.BigEndian.PutUint16(buf[:2], uint16(len(message)))
-
-	// Copy the message into the buffer after the length
-	copy(buf[2:], message)
-
-	// Send the buffer over the connection
-	if _, err := conn.Write(buf); err != nil {
-		return fmt.Errorf("failed to send message: %w", err)
+	// Use binary.Read to read the port directly from the connection
+	err := binary.Read(conn, binary.BigEndian, &port)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read port number from connection: %w", err)
 	}
 
 	// Successful
-	return nil
-}
-
-// ReceiveWebSocketInt reads a 2-byte big-endian unsigned integer from the WebSocket connection.
-func ReceiveWebSocketInt(conn *websocket.Conn) (uint16, error) {
-	var port uint16
-
-	_, message, err := conn.ReadMessage()
-	if err != nil {
-		return 0, fmt.Errorf("failed to read message: %w", err)
-	}
-
-	if len(message) < 2 {
-		return 0, fmt.Errorf("message too short to contain a valid port number")
-	}
-
-	port = binary.BigEndian.Uint16(message[:2])
 	return port, nil
-}
-
-// SendWebSocketInt sends the port number as a 2-byte big-endian unsigned integer over a WebSocket connection.
-func SendWebSocketInt(conn *websocket.Conn, port uint16) error {
-	buf := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf, port)
-
-	err := conn.WriteMessage(websocket.BinaryMessage, buf)
-	if err != nil {
-		return fmt.Errorf("failed to send port number %d: %w", port, err)
-	}
-
-	return nil
 }
 
 func SendBinaryByte(conn net.Conn, message byte) error {
