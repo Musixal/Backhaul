@@ -22,9 +22,6 @@ func WSConnectionHandler(wsConn *websocket.Conn, tcpConn net.Conn, logger *logru
 	transferTCPToWebSocket(tcpConn, wsConn, logger, usage, remotePort, sniffer)
 
 	<-done
-
-	wsConn.Close()
-	tcpConn.Close()
 }
 
 // transferWebSocketToTCP transfers data from a WebSocket connection to a TCP connection
