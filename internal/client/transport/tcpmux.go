@@ -213,6 +213,11 @@ func (c *TcpMuxTransport) channelListener() {
 			case utils.SG_Chan:
 				c.logger.Debug("channel signal received, initiating tunnel dialer")
 				go c.tunnelDialer()
+
+			case utils.SG_Closed:
+				c.logger.Info("control channel has been closed by the server")
+				go c.Restart()
+				return
 			case utils.SG_HB:
 				c.logger.Debug("heartbeat signal received successfully")
 			default:
@@ -235,15 +240,15 @@ func (c *TcpMuxTransport) tunnelDialer() {
 	c.activeMu.Unlock()
 
 	if c.controlChannel == nil {
-		c.logger.Warn("wsmux control channel is nil, cannot dial tunnel. Restarting client...")
+		c.logger.Warn("control channel is nil, cannot dial tunnel. Restarting client...")
 		go c.Restart()
 		return
 	}
-	c.logger.Debugf("initiating new wsmux tunnel connection to address %s", c.config.RemoteAddr)
+	c.logger.Debugf("initiating new tunnel connection to address %s", c.config.RemoteAddr)
 
 	tunnelConn, err := c.tcpDialer(c.config.RemoteAddr)
 	if err != nil {
-		c.logger.Errorf("failed to dial wsmux tunnel server: %v", err)
+		c.logger.Errorf("failed to dial tunnel server: %v", err)
 		c.activeMu.Lock()
 		c.activeConnections--
 		c.activeMu.Unlock()

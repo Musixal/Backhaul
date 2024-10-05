@@ -54,7 +54,7 @@ func (s *Server) Start() {
 		}
 
 		tcpServer := transport.NewTCPServer(s.ctx, tcpConfig, s.logger)
-		go tcpServer.TunnelListener()
+		go tcpServer.Start()
 
 	} else if s.config.Transport == config.TCPMUX {
 		tcpMuxConfig := &transport.TcpMuxConfig{
@@ -76,7 +76,7 @@ func (s *Server) Start() {
 		}
 
 		tcpMuxServer := transport.NewTcpMuxServer(s.ctx, tcpMuxConfig, s.logger)
-		go tcpMuxServer.TunnelListener()
+		go tcpMuxServer.Start()
 
 	} else if s.config.Transport == config.WS || s.config.Transport == config.WSS {
 		wsConfig := &transport.WsConfig{
@@ -96,7 +96,7 @@ func (s *Server) Start() {
 		}
 
 		wsServer := transport.NewWSServer(s.ctx, wsConfig, s.logger)
-		go wsServer.TunnelListener()
+		go wsServer.Start()
 
 	} else if s.config.Transport == config.WSMUX || s.config.Transport == config.WSSMUX {
 		wsMuxConfig := &transport.WsMuxConfig{
@@ -121,7 +121,7 @@ func (s *Server) Start() {
 		}
 
 		wsMuxServer := transport.NewWSMuxServer(s.ctx, wsMuxConfig, s.logger)
-		go wsMuxServer.TunnelListener()
+		go wsMuxServer.Start()
 
 	} else if s.config.Transport == config.QUIC {
 		quicConfig := &transport.QuicConfig{

@@ -26,10 +26,10 @@ type WsTransport struct {
 	cancel         context.CancelFunc
 	logger         *logrus.Logger
 	tunnelChannel  chan TunnelChannel
-	getNewConnChan chan struct{}
+	localChannel   chan LocalTCPConn
+	reqNewConnChan chan struct{}
 	controlChannel *websocket.Conn
 	restartMutex   sync.Mutex
-	chanMu         sync.Mutex
 	usageMonitor   *web.Usage
 }
 
@@ -51,12 +51,6 @@ type WsConfig struct {
 
 }
 
-type TunnelChannel struct {
-	conn *websocket.Conn
-	ping chan struct{}
-	mu   *sync.Mutex
-}
-
 func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Logger) *WsTransport {
 	// Create a derived context from the parent context
 	ctx, cancel := context.WithCancel(parentCtx)
@@ -69,12 +63,18 @@ func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 		cancel:         cancel,
 		logger:         logger,
 		tunnelChannel:  make(chan TunnelChannel, config.ChannelSize),
-		getNewConnChan: make(chan struct{}, config.ChannelSize),
+		localChannel:   make(chan LocalTCPConn, config.ChannelSize),
+		reqNewConnChan: make(chan struct{}, config.ChannelSize),
 		controlChannel: nil, // will be set when a control connection is established
 		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
 	return server
+}
+
+func (s *WsTransport) Start() {
+	go s.tunnelListener()
+
 }
 func (s *WsTransport) Restart() {
 	if !s.restartMutex.TryLock() {
@@ -101,33 +101,54 @@ func (s *WsTransport) Restart() {
 
 	// Re-initialize variables
 	s.tunnelChannel = make(chan TunnelChannel, s.config.ChannelSize)
-	s.getNewConnChan = make(chan struct{}, s.config.ChannelSize)
+	s.localChannel = make(chan LocalTCPConn, s.config.ChannelSize)
+	s.reqNewConnChan = make(chan struct{}, s.config.ChannelSize)
 	s.controlChannel = nil
 	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.config.Sniffer, &s.config.TunnelStatus, s.logger)
 	s.config.TunnelStatus = ""
 
-	go s.TunnelListener()
+	go s.Start()
 
 }
 
-func (s *WsTransport) getClosedSignal() {
-	for {
-		// Channel to receive the message or error
-		resultChan := make(chan struct {
+func (s *WsTransport) channelHandler() {
+	ticker := time.NewTicker(s.config.Heartbeat)
+	defer ticker.Stop()
+
+	// Channel to receive the message or error
+	resultChan := make(chan struct {
+		message []byte
+		err     error
+	})
+	go func() {
+		_, message, err := s.controlChannel.ReadMessage()
+		resultChan <- struct {
 			message []byte
 			err     error
-		})
-		go func() {
-			_, message, err := s.controlChannel.ReadMessage()
-			resultChan <- struct {
-				message []byte
-				err     error
-			}{message, err}
-		}()
+		}{message, err}
+	}()
 
+	for {
 		select {
 		case <-s.ctx.Done():
+			_ = s.controlChannel.WriteMessage(websocket.BinaryMessage, []byte{utils.SG_Closed})
 			return
+		case <-s.reqNewConnChan:
+			err := s.controlChannel.WriteMessage(websocket.BinaryMessage, []byte{utils.SG_Chan})
+			if err != nil {
+				s.logger.Error("error sending channel signal, attempting to restart server...")
+				go s.Restart()
+				return
+			}
+
+		case <-ticker.C:
+			err := s.controlChannel.WriteMessage(websocket.BinaryMessage, []byte{utils.SG_HB})
+			if err != nil {
+				s.logger.Errorf("Failed to send heartbeat signal. Error: %v. Restarting server...", err)
+				go s.Restart()
+				return
+			}
+			s.logger.Debug("heartbeat signal sent successfully")
 
 		case result := <-resultChan:
 			if result.err != nil {
@@ -142,81 +163,9 @@ func (s *WsTransport) getClosedSignal() {
 			}
 		}
 	}
-
 }
 
-func (s *WsTransport) portConfigReader() {
-	// port mapping for listening on each local port
-	for _, portMapping := range s.config.Ports {
-		var localAddr string
-		parts := strings.Split(portMapping, "=")
-		if len(parts) < 2 {
-			port, err := strconv.Atoi(parts[0])
-			if err != nil {
-				s.logger.Fatalf("invalid port mapping format: %s", portMapping)
-			}
-			localAddr = fmt.Sprintf(":%d", port)
-			parts = append(parts, strconv.Itoa(port))
-		} else {
-			localAddr = strings.TrimSpace(parts[0])
-			if _, err := strconv.Atoi(localAddr); err == nil {
-				localAddr = ":" + localAddr // :3080 format
-			}
-		}
-
-		remoteAddr := strings.TrimSpace(parts[1])
-
-		go s.localListener(localAddr, remoteAddr)
-	}
-}
-
-func (s *WsTransport) heartbeat() {
-	ticker := time.NewTicker(s.config.Heartbeat)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-s.ctx.Done():
-			return
-		case <-ticker.C:
-			if s.controlChannel == nil {
-				s.logger.Warn("control channel is nil. Restarting server to re-establish connection...")
-				go s.Restart()
-				return
-			}
-			s.chanMu.Lock() // race condition vs getNewConnection func
-			err := s.controlChannel.WriteMessage(websocket.BinaryMessage, []byte{utils.SG_HB})
-			s.chanMu.Unlock()
-			if err != nil {
-				s.logger.Errorf("Failed to send heartbeat signal. Error: %v. Restarting server...", err)
-				go s.Restart()
-				return
-			}
-			s.logger.Debug("heartbeat signal sent successfully")
-		}
-	}
-}
-
-func (s *WsTransport) getNewConnection() {
-	for {
-		select {
-		case <-s.ctx.Done():
-			return
-
-		case <-s.getNewConnChan:
-			s.chanMu.Lock()
-			err := s.controlChannel.WriteMessage(websocket.BinaryMessage, []byte{utils.SG_Chan})
-			s.chanMu.Unlock()
-			if err != nil {
-				s.logger.Error("error sending channel signal, attempting to restart server...")
-				go s.Restart()
-				return
-			}
-		}
-	}
-}
-
-func (s *WsTransport) TunnelListener() {
+func (s *WsTransport) tunnelListener() {
 	// for  webui
 	if s.config.WebPort > 0 {
 		go s.usageMonitor.Monitor()
@@ -259,10 +208,9 @@ func (s *WsTransport) TunnelListener() {
 
 				s.logger.Info("control channel established successfully")
 
-				go s.getNewConnection()
-				go s.heartbeat()
-				go s.portConfigReader()
-				go s.getClosedSignal()
+				go s.channelHandler()
+				go s.parsePortMappings()
+				go s.handleLoop()
 
 				s.config.TunnelStatus = "Connected (Websocket)"
 
@@ -276,7 +224,7 @@ func (s *WsTransport) TunnelListener() {
 			}
 			select {
 			case s.tunnelChannel <- wsConn:
-				go s.pingSender(&wsConn)
+				go s.keepAlive(wsConn)
 				s.logger.Debugf("websocket connection accepted from %s", conn.RemoteAddr().String())
 			default:
 				s.logger.Warnf("websocket tunnel channel is full, closing connection from %s", conn.RemoteAddr().String())
@@ -309,14 +257,41 @@ func (s *WsTransport) TunnelListener() {
 
 	<-s.ctx.Done()
 
-	if s.controlChannel != nil {
-		s.controlChannel.Close()
-	}
-
 	// Gracefully shutdown the server
 	s.logger.Infof("shutting down the webSocket server on %s", addr)
 	if err := server.Shutdown(context.Background()); err != nil {
 		s.logger.Errorf("Failed to gracefully shutdown the server: %v", err)
+	}
+
+	if s.controlChannel != nil {
+		s.controlChannel.Close()
+	}
+
+	close(s.tunnelChannel)
+}
+
+func (s *WsTransport) parsePortMappings() {
+	// port mapping for listening on each local port
+	for _, portMapping := range s.config.Ports {
+		var localAddr string
+		parts := strings.Split(portMapping, "=")
+		if len(parts) < 2 {
+			port, err := strconv.Atoi(parts[0])
+			if err != nil {
+				s.logger.Fatalf("invalid port mapping format: %s", portMapping)
+			}
+			localAddr = fmt.Sprintf(":%d", port)
+			parts = append(parts, strconv.Itoa(port))
+		} else {
+			localAddr = strings.TrimSpace(parts[0])
+			if _, err := strconv.Atoi(localAddr); err == nil {
+				localAddr = ":" + localAddr // :3080 format
+			}
+		}
+
+		remoteAddr := strings.TrimSpace(parts[1])
+
+		go s.localListener(localAddr, remoteAddr)
 	}
 }
 
@@ -332,17 +307,12 @@ func (s *WsTransport) localListener(localAddr string, remoteAddr string) {
 
 	s.logger.Infof("listener started successfully, listening on address: %s", portListener.Addr().String())
 
-	// make a channel
-	localChan := make(chan net.Conn, s.config.ChannelSize)
-
-	// start accepting incoming connections
-	go s.acceptLocalConn(portListener, localChan)
-	go s.handleLocalChan(remoteAddr, localChan)
+	go s.acceptLocalConn(portListener, remoteAddr)
 
 	<-s.ctx.Done()
 }
 
-func (s *WsTransport) acceptLocalConn(listener net.Listener, acceptChan chan net.Conn) {
+func (s *WsTransport) acceptLocalConn(listener net.Listener, remoteAddr string) {
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -372,11 +342,10 @@ func (s *WsTransport) acceptLocalConn(listener net.Listener, acceptChan chan net
 					s.logger.Tracef("TCP_NODELAY disabled for %s", tcpConn.RemoteAddr().String())
 				}
 			}
-			tcpConn.SetKeepAlive(true)
-			tcpConn.SetKeepAlivePeriod(s.config.KeepAlive)
+
 
 			select {
-			case s.getNewConnChan <- struct{}{}:
+			case s.reqNewConnChan <- struct{}{}:
 				// Successfully requested a new connection
 			default:
 				// The channel is full, do nothing
@@ -384,37 +353,42 @@ func (s *WsTransport) acceptLocalConn(listener net.Listener, acceptChan chan net
 			}
 
 			select {
-			case acceptChan <- conn:
+			case s.localChannel <- LocalTCPConn{conn: conn, remoteAddr: remoteAddr}:
 				s.logger.Debugf("accepted incoming TCP connection from %s", tcpConn.RemoteAddr().String())
 
 			default: // channel is full, discard the connection
 				s.logger.Warnf("channel with listener %s is full, discarding TCP connection from %s", listener.Addr().String(), tcpConn.LocalAddr().String())
-				tcpConn.Close()
+				conn.Close()
 			}
 		}
 	}
 }
 
-func (s *WsTransport) handleLocalChan(remoteAddr string, localChan chan net.Conn) {
-	for incomingConn := range localChan {
-	loop:
-		for tunnelConnection := range s.tunnelChannel {
-			close(tunnelConnection.ping)
-			tunnelConnection.mu.Lock()
-			if err := tunnelConnection.conn.WriteMessage(websocket.TextMessage, []byte(remoteAddr)); err != nil {
-				s.logger.Debugf("%v", err) // failed to send port number
-				tunnelConnection.conn.Close()
-				continue loop
-			}
-			// Handle data exchange between connections
-			go utils.WSConnectionHandler(tunnelConnection.conn, incomingConn, s.logger, s.usageMonitor, incomingConn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
-			break loop
+func (s *WsTransport) handleLoop() {
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case localConn := <-s.localChannel:
+		loop:
+			for tunnelConnection := range s.tunnelChannel {
+				close(tunnelConnection.ping)
+				tunnelConnection.mu.Lock()
+				if err := tunnelConnection.conn.WriteMessage(websocket.TextMessage, []byte(localConn.remoteAddr)); err != nil {
+					s.logger.Debugf("%v", err) // failed to send port number
+					tunnelConnection.conn.Close()
+					continue loop
+				}
+				// Handle data exchange between connections
+				go utils.WSConnectionHandler(tunnelConnection.conn, localConn.conn, s.logger, s.usageMonitor, localConn.conn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
+				break loop
 
+			}
 		}
 	}
 }
 
-func (s *WsTransport) pingSender(conn *TunnelChannel) {
+func (s *WsTransport) keepAlive(conn TunnelChannel) {
 	ticker := time.NewTicker(s.config.Heartbeat) // Send periodic pings to the client
 
 	defer ticker.Stop()

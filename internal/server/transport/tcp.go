@@ -22,6 +22,8 @@ type TcpTransport struct {
 	cancel         context.CancelFunc
 	logger         *logrus.Logger
 	tunnelChannel  chan net.Conn
+	localChannel   chan LocalTCPConn
+	reqNewConnChan chan struct{}
 	controlChannel net.Conn
 	restartMutex   sync.Mutex
 	usageMonitor   *web.Usage
@@ -53,6 +55,8 @@ func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		cancel:         cancel,
 		logger:         logger,
 		tunnelChannel:  make(chan net.Conn, config.ChannelSize),
+		localChannel:   make(chan LocalTCPConn, config.ChannelSize),
+		reqNewConnChan: make(chan struct{}, config.ChannelSize),
 		controlChannel: nil, // will be set when a control connection is established
 		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
@@ -60,6 +64,25 @@ func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 	return server
 }
 
+func (s *TcpTransport) Start() {
+	s.config.TunnelStatus = "Disconnected (TCP)"
+
+	if s.config.WebPort > 0 {
+		go s.usageMonitor.Monitor()
+	}
+
+	go s.tunnelListener()
+
+	s.channelHandshake()
+
+	if s.controlChannel != nil {
+		s.config.TunnelStatus = "Connected (TCP)"
+
+		go s.parsePortMappings()
+		go s.channelHandler()
+		go s.handleLoop()
+	}
+}
 func (s *TcpTransport) Restart() {
 	if !s.restartMutex.TryLock() {
 		s.logger.Warn("server restart already in progress, skipping restart attempt")
@@ -85,82 +108,62 @@ func (s *TcpTransport) Restart() {
 
 	// Re-initialize variables
 	s.tunnelChannel = make(chan net.Conn, s.config.ChannelSize)
+	s.localChannel = make(chan LocalTCPConn, s.config.ChannelSize)
+	s.reqNewConnChan = make(chan struct{}, s.config.ChannelSize)
 	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.config.Sniffer, &s.config.TunnelStatus, s.logger)
 	s.config.TunnelStatus = ""
 	s.controlChannel = nil
 
-	go s.TunnelListener()
+	go s.Start()
 
 }
 
-func (s *TcpTransport) portConfigReader() {
-	for _, portMapping := range s.config.Ports {
-		var localAddr string
-		parts := strings.Split(portMapping, "=")
-		if len(parts) < 2 {
-			port, err := strconv.Atoi(parts[0])
+func (s *TcpTransport) channelHandshake() {
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case conn := <-s.tunnelChannel:
+			// Set a read deadline for the token response
+			if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+				s.logger.Errorf("failed to set read deadline: %v", err)
+				conn.Close()
+				continue
+			}
+			msg, err := utils.ReceiveBinaryString(conn)
 			if err != nil {
-				s.logger.Fatalf("invalid port mapping format: %s", portMapping)
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					s.logger.Warn("timeout while waiting for control channel signal")
+				} else {
+					s.logger.Errorf("failed to receive control channel signal: %v", err)
+				}
+				conn.Close() // Close connection on error or timeout
+				continue
 			}
-			localAddr = fmt.Sprintf(":%d", port)
-			parts = append(parts, strconv.Itoa(port))
-		} else {
-			localAddr = strings.TrimSpace(parts[0])
-			if _, err := strconv.Atoi(localAddr); err == nil {
-				localAddr = ":" + localAddr // :3080 format
+
+			// Resetting the deadline (removes any existing deadline)
+			conn.SetReadDeadline(time.Time{})
+
+			if msg != s.config.Token {
+				s.logger.Warnf("invalid security token received: %s", msg)
+				continue
 			}
+
+			err = utils.SendBinaryString(conn, s.config.Token)
+			if err != nil {
+				s.logger.Errorf("failed to send security token: %v", err)
+				continue
+			}
+
+			s.controlChannel = conn
+
+			s.logger.Info("control channel successfully established.")
+			return
 		}
-
-		remoteAddr := strings.TrimSpace(parts[1])
-
-		go s.localListener(localAddr, remoteAddr)
 	}
 }
 
-func (s *TcpTransport) channelHandshake(conn net.Conn) {
-	// Set a read deadline for the token response
-	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
-		s.logger.Errorf("failed to set read deadline: %v", err)
-		conn.Close()
-		return
-	}
-	msg, err := utils.ReceiveBinaryString(conn)
-	if err != nil {
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			s.logger.Warn("timeout while waiting for control channel signal")
-		} else {
-			s.logger.Errorf("failed to receive control channel signal: %v", err)
-		}
-		conn.Close() // Close connection on error or timeout
-		return
-	}
-
-	// Resetting the deadline (removes any existing deadline)
-	conn.SetReadDeadline(time.Time{})
-
-	if msg != s.config.Token {
-		s.logger.Warnf("invalid security token received: %s", msg)
-		return
-	}
-
-	err = utils.SendBinaryString(conn, s.config.Token)
-	if err != nil {
-		s.logger.Errorf("failed to send security token: %v", err)
-		return
-	}
-
-	s.controlChannel = conn
-
-	s.logger.Info("control channel successfully established.")
-
-	// call the functions
-	go s.monitorControlChannel()
-	go s.portConfigReader()
-
-	s.config.TunnelStatus = "Connected (TCP)"
-}
-
-func (s *TcpTransport) monitorControlChannel() {
+func (s *TcpTransport) channelHandler() {
 	ticker := time.NewTicker(s.config.Heartbeat)
 	defer ticker.Stop()
 
@@ -181,14 +184,16 @@ func (s *TcpTransport) monitorControlChannel() {
 	for {
 		select {
 		case <-s.ctx.Done():
+			_ = utils.SendBinaryByte(s.controlChannel, utils.SG_Closed)
 			return
-		case <-ticker.C:
-			if s.controlChannel == nil {
-				s.logger.Warn("control channel is nil, attempting to restart server...")
+		case <-s.reqNewConnChan:
+			err := utils.SendBinaryByte(s.controlChannel, utils.SG_Chan)
+			if err != nil {
+				s.logger.Error("error sending channel signal, attempting to restart server...")
 				go s.Restart()
 				return
 			}
-
+		case <-ticker.C:
 			err := utils.SendBinaryByte(s.controlChannel, utils.SG_HB)
 			if err != nil {
 				s.logger.Error("failed to send heartbeat signal, attempting to restart server...")
@@ -212,13 +217,7 @@ func (s *TcpTransport) monitorControlChannel() {
 	}
 }
 
-func (s *TcpTransport) TunnelListener() {
-	// for  webui
-	if s.config.WebPort > 0 {
-		go s.usageMonitor.Monitor()
-	}
-	s.config.TunnelStatus = "Disconnected (TCP)"
-
+func (s *TcpTransport) tunnelListener() {
 	listener, err := net.Listen("tcp", s.config.BindAddr)
 	if err != nil {
 		s.logger.Fatalf("failed to start listener on %s: %v", s.config.BindAddr, err)
@@ -229,15 +228,16 @@ func (s *TcpTransport) TunnelListener() {
 
 	s.logger.Infof("server started successfully, listening on address: %s", listener.Addr().String())
 
-	go s.acceptTunCon(listener)
+	go s.acceptTunnelConn(listener)
 
 	<-s.ctx.Done()
 }
 
-func (s *TcpTransport) acceptTunCon(listener net.Listener) {
+func (s *TcpTransport) acceptTunnelConn(listener net.Listener) {
 	for {
 		select {
 		case <-s.ctx.Done():
+			close(s.tunnelChannel)
 			return
 		default:
 			s.logger.Debugf("waiting for accept incoming tunnel connection on %s", listener.Addr().String())
@@ -281,20 +281,37 @@ func (s *TcpTransport) acceptTunCon(listener net.Listener) {
 				s.logger.Warnf("failed to set TCP keep-alive period for %s: %v", tcpConn.RemoteAddr().String(), err)
 			}
 
-			// try to establish a new channel
-			if s.controlChannel == nil {
-				s.logger.Info("control channel not found, attempting to establish a new session")
-				go s.channelHandshake(conn)
-				continue
-			}
-
 			select {
 			case s.tunnelChannel <- conn:
 			default: // The channel is full, do nothing
-				s.logger.Warn("tunnel channel is full, discard the connection")
+				s.logger.Warnf("tunnel listener channel is full, discarding TCP connection from %s", conn.LocalAddr().String())
 				conn.Close()
 			}
 		}
+	}
+}
+
+func (s *TcpTransport) parsePortMappings() {
+	for _, portMapping := range s.config.Ports {
+		var localAddr string
+		parts := strings.Split(portMapping, "=")
+		if len(parts) < 2 {
+			port, err := strconv.Atoi(parts[0])
+			if err != nil {
+				s.logger.Fatalf("invalid port mapping format: %s", portMapping)
+			}
+			localAddr = fmt.Sprintf(":%d", port)
+			parts = append(parts, strconv.Itoa(port))
+		} else {
+			localAddr = strings.TrimSpace(parts[0])
+			if _, err := strconv.Atoi(localAddr); err == nil {
+				localAddr = ":" + localAddr // :3080 format
+			}
+		}
+
+		remoteAddr := strings.TrimSpace(parts[1])
+
+		go s.localListener(localAddr, remoteAddr)
 	}
 }
 
@@ -309,19 +326,12 @@ func (s *TcpTransport) localListener(localAddr string, remoteAddr string) {
 
 	s.logger.Infof("listener started successfully, listening on address: %s", listener.Addr().String())
 
-	localChannel := make(chan net.Conn, s.config.ChannelSize)
-
-	go s.acceptLocalCon(listener, localChannel)
-	go s.handleLocalChan(localChannel, remoteAddr)
+	go s.acceptLocalConn(listener, remoteAddr)
 
 	<-s.ctx.Done()
-
-	if s.controlChannel != nil {
-		s.controlChannel.Close()
-	}
 }
 
-func (s *TcpTransport) acceptLocalCon(listener net.Listener, localChannel chan net.Conn) {
+func (s *TcpTransport) acceptLocalConn(listener net.Listener, remoteAddr string) {
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -352,41 +362,45 @@ func (s *TcpTransport) acceptLocalCon(listener net.Listener, localChannel chan n
 				}
 			}
 
-			s.logger.Debugf("accepted incoming TCP connection from %s", tcpConn.RemoteAddr().String())
-
-			err = utils.SendBinaryByte(s.controlChannel, utils.SG_Chan)
-			if err != nil {
-				s.logger.Error("error sending channel signal, attempting to restart server...")
-				go s.Restart()
-				return
+			select {
+			case s.reqNewConnChan <- struct{}{}:
+				// Successfully requested a new connection
+			default:
+				// The channel is full, do nothing
+				s.logger.Warn("channel is full, cannot request a new connection")
 			}
 
 			select {
-			case localChannel <- tcpConn:
+			case s.localChannel <- LocalTCPConn{conn: conn, remoteAddr: remoteAddr}:
 				s.logger.Debugf("accepted incoming TCP connection from %s", tcpConn.RemoteAddr().String())
 
 			default: // channel is full, discard the connection
 				s.logger.Warnf("channel with listener %s is full, discarding TCP connection from %s", listener.Addr().String(), tcpConn.LocalAddr().String())
-				tcpConn.Close()
+				conn.Close()
 			}
 		}
 	}
 }
 
-func (s *TcpTransport) handleLocalChan(localChan chan net.Conn, remoteAddr string) {
-	for localConn := range localChan {
-	loop:
-		for tunnelConn := range s.tunnelChannel {
-			// Send the target addr over the connection
-			if err := utils.SendBinaryString(tunnelConn, remoteAddr); err != nil {
-				s.logger.Errorf("%v", err)
-				tunnelConn.Close()
-				continue loop
-			}
+func (s *TcpTransport) handleLoop() {
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case localConn := <-s.localChannel:
+		loop:
+			for tunnelConn := range s.tunnelChannel {
+				// Send the target addr over the connection
+				if err := utils.SendBinaryString(tunnelConn, localConn.remoteAddr); err != nil {
+					s.logger.Errorf("%v", err)
+					tunnelConn.Close()
+					continue loop
+				}
 
-			// Handle data exchange between connections
-			go utils.TCPConnectionHandler(localConn, tunnelConn, s.logger, s.usageMonitor, localConn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
-			break loop
+				// Handle data exchange between connections
+				go utils.TCPConnectionHandler(localConn.conn, tunnelConn, s.logger, s.usageMonitor, localConn.conn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
+				break loop
+			}
 		}
 	}
 }
