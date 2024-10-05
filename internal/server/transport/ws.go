@@ -394,6 +394,9 @@ func (s *WsTransport) keepAlive(conn TunnelChannel) {
 
 	for {
 		select {
+		case <-s.ctx.Done():
+			conn.conn.Close()
+			return
 		case <-conn.ping:
 			s.logger.Trace("ping channel closed")
 			return
