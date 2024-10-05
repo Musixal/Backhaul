@@ -73,6 +73,13 @@ func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 }
 
 func (s *WsTransport) Start() {
+	// for  webui
+	if s.config.WebPort > 0 {
+		go s.usageMonitor.Monitor()
+	}
+
+	s.config.TunnelStatus = fmt.Sprintf("Disconnected (%s)", s.config.Mode)
+
 	go s.tunnelListener()
 
 }
@@ -166,13 +173,6 @@ func (s *WsTransport) channelHandler() {
 }
 
 func (s *WsTransport) tunnelListener() {
-	// for  webui
-	if s.config.WebPort > 0 {
-		go s.usageMonitor.Monitor()
-	}
-
-	s.config.TunnelStatus = "Disconnected (Websocket)"
-
 	addr := s.config.BindAddr
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  16 * 1024,
@@ -212,7 +212,7 @@ func (s *WsTransport) tunnelListener() {
 				go s.parsePortMappings()
 				go s.handleLoop()
 
-				s.config.TunnelStatus = "Connected (Websocket)"
+				s.config.TunnelStatus = fmt.Sprintf("Connected (%s)", s.config.Mode)
 
 				return
 			}
@@ -342,7 +342,6 @@ func (s *WsTransport) acceptLocalConn(listener net.Listener, remoteAddr string) 
 					s.logger.Tracef("TCP_NODELAY disabled for %s", tcpConn.RemoteAddr().String())
 				}
 			}
-
 
 			select {
 			case s.reqNewConnChan <- struct{}{}:

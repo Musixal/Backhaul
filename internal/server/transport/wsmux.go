@@ -88,6 +88,13 @@ func NewWSMuxServer(parentCtx context.Context, config *WsMuxConfig, logger *logr
 }
 
 func (s *WsMuxTransport) Start() {
+	// for  webui
+	if s.config.WebPort > 0 {
+		go s.usageMonitor.Monitor()
+	}
+
+	s.config.TunnelStatus = fmt.Sprintf("Disconnected (%s)", s.config.Mode)
+
 	go s.tunnelListener()
 
 }
@@ -187,13 +194,6 @@ func (s *WsMuxTransport) channelHandler() {
 }
 
 func (s *WsMuxTransport) tunnelListener() {
-	// for  webui
-	if s.config.WebPort > 0 {
-		go s.usageMonitor.Monitor()
-	}
-
-	s.config.TunnelStatus = fmt.Sprintf("Disconnected (%s)", s.config.Mode)
-
 	addr := s.config.BindAddr
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  16 * 1024,

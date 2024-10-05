@@ -4,9 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"strconv"
-	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/musix/backhaul/internal/utils"
@@ -25,9 +24,8 @@ type TcpMuxTransport struct {
 	logger            *logrus.Logger
 	controlChannel    net.Conn
 	usageMonitor      *web.Usage
-	activeMu          sync.Mutex
 	restartMutex      sync.Mutex
-	activeConnections int
+	activeConnections int32
 }
 
 type TcpMuxConfig struct {
@@ -69,11 +67,20 @@ func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logru
 		logger:            logger,
 		controlChannel:    nil, // will be set when a control connection is established
 		activeConnections: 0,
-		activeMu:          sync.Mutex{},
 		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
 	return client
+}
+
+func (c *TcpMuxTransport) Start() {
+	if c.config.WebPort > 0 {
+		go c.usageMonitor.Monitor()
+	}
+
+	c.config.TunnelStatus = "Disconnected (TCPMUX)"
+
+	go c.channelDialer()
 }
 
 func (c *TcpMuxTransport) Restart() {
@@ -88,9 +95,6 @@ func (c *TcpMuxTransport) Restart() {
 		c.cancel()
 	}
 
-	// Close tunnel channel connection
-	c.closeControlChannel("restart")
-
 	time.Sleep(2 * time.Second)
 
 	ctx, cancel := context.WithCancel(c.parentctx)
@@ -102,28 +106,20 @@ func (c *TcpMuxTransport) Restart() {
 	c.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.config.Sniffer, &c.config.TunnelStatus, c.logger)
 	c.config.TunnelStatus = ""
 	c.activeConnections = 0
-	c.activeMu = sync.Mutex{}
 
-	go c.ChannelDialer()
+	go c.Start()
 
 }
 
-func (c *TcpMuxTransport) ChannelDialer() {
-	// for  webui
-	if c.config.WebPort > 0 {
-		go c.usageMonitor.Monitor()
-	}
-
-	c.config.TunnelStatus = "Disconnected (TCPMux)"
+func (c *TcpMuxTransport) channelDialer() {
 	c.logger.Info("attempting to establish a new tcpmux control channel connection...")
 
-loop:
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
 		default:
-			tunnelConn, err := c.tcpDialer(c.config.RemoteAddr)
+			tunnelConn, err := TcpDialer(c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay)
 			if err != nil {
 				c.logger.Errorf("tcpmux channel dialer: error dialing remote address %s: %v", c.config.RemoteAddr, err)
 				time.Sleep(c.config.RetryInterval)
@@ -135,14 +131,14 @@ loop:
 			if err != nil {
 				c.logger.Errorf("failed to send security token: %v", err)
 				tunnelConn.Close()
-				continue loop
+				continue
 			}
 
 			// Set a read deadline for the token response
 			if err := tunnelConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
 				c.logger.Errorf("failed to set read deadline: %v", err)
 				tunnelConn.Close()
-				continue loop
+				continue
 			}
 			// Receive response
 			message, err := utils.ReceiveBinaryString(tunnelConn)
@@ -154,7 +150,7 @@ loop:
 				}
 				tunnelConn.Close() // Close connection on error or timeout
 				time.Sleep(c.config.RetryInterval)
-				continue loop
+				continue
 			}
 			// Resetting the deadline (removes any existing deadline)
 			tunnelConn.SetReadDeadline(time.Time{})
@@ -164,29 +160,48 @@ loop:
 				c.logger.Info("tcpmux control channel established successfully")
 
 				c.config.TunnelStatus = "Connected (TCPMux)"
-				go c.channelListener()
-				go c.poolChecker()
-				break loop // break the loop
+				go c.channelHandler()
+				go c.poolMaintainer()
+
+				return
 			} else {
 				c.logger.Errorf("invalid token received. Expected: %s, Received: %s. Retrying...", c.config.Token, message)
 				tunnelConn.Close() // Close connection if the token is invalid
 				time.Sleep(c.config.RetryInterval)
-				continue loop
+				continue
 			}
 		}
 	}
 
 }
 
-func (c *TcpMuxTransport) closeControlChannel(reason string) {
-	if c.controlChannel != nil {
-		_ = utils.SendBinaryByte(c.controlChannel, utils.SG_Closed)
-		c.controlChannel.Close()
-		c.logger.Debugf("control channel closed due to %s", reason)
+func (c *TcpMuxTransport) poolMaintainer() {
+	ticker := time.NewTicker(time.Millisecond * 350)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+
+		case <-ticker.C:
+			activeConnections := int(c.activeConnections)
+			c.logger.Tracef("active connections: %d", c.activeConnections)
+			if activeConnections < c.config.ConnectionPool/2 {
+				neededConn := c.config.ConnectionPool - activeConnections
+				for i := 0; i < neededConn; i++ {
+					go c.tunnelDialer()
+				}
+
+			}
+
+		}
+
 	}
+
 }
 
-func (c *TcpMuxTransport) channelListener() {
+func (c *TcpMuxTransport) channelHandler() {
 	msgChan := make(chan byte, 100)
 	errChan := make(chan error, 100)
 
@@ -206,7 +221,7 @@ func (c *TcpMuxTransport) channelListener() {
 	for {
 		select {
 		case <-c.ctx.Done():
-			c.closeControlChannel("context cancellation")
+			_ = utils.SendBinaryByte(c.controlChannel, utils.SG_Closed)
 			return
 		case msg := <-msgChan:
 			switch msg {
@@ -235,33 +250,26 @@ func (c *TcpMuxTransport) channelListener() {
 }
 
 func (c *TcpMuxTransport) tunnelDialer() {
-	c.activeMu.Lock()
-	c.activeConnections++
-	c.activeMu.Unlock()
+	// Increment active connections counter
+	atomic.AddInt32(&c.activeConnections, 1)
 
-	if c.controlChannel == nil {
-		c.logger.Warn("control channel is nil, cannot dial tunnel. Restarting client...")
-		go c.Restart()
-		return
-	}
 	c.logger.Debugf("initiating new tunnel connection to address %s", c.config.RemoteAddr)
 
-	tunnelConn, err := c.tcpDialer(c.config.RemoteAddr)
+	// Dial to the tunnel server
+	tunnelConn, err := TcpDialer(c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay)
 	if err != nil {
 		c.logger.Errorf("failed to dial tunnel server: %v", err)
-		c.activeMu.Lock()
-		c.activeConnections--
-		c.activeMu.Unlock()
+
+		// Decrement active connections on failure
+		atomic.AddInt32(&c.activeConnections, -1)
 		return
 	}
-	c.handleTunnelConn(tunnelConn)
+	c.handleSession(tunnelConn)
 }
 
-func (c *TcpMuxTransport) handleTunnelConn(tunnelConn net.Conn) {
+func (c *TcpMuxTransport) handleSession(tunnelConn net.Conn) {
 	defer func() {
-		c.activeMu.Lock()
-		c.activeConnections--
-		c.activeMu.Unlock()
+		atomic.AddInt32(&c.activeConnections, -1)
 	}()
 
 	// SMUX server
@@ -298,27 +306,15 @@ func (c *TcpMuxTransport) handleTunnelConn(tunnelConn net.Conn) {
 }
 
 func (c *TcpMuxTransport) localDialer(stream *smux.Stream, remoteAddr string) {
-	// Extract the port
-	parts := strings.Split(remoteAddr, ":")
-	var port int
-	var err error
-	if len(parts) < 2 {
-		port, err = strconv.Atoi(parts[0])
-		if err != nil {
-			c.logger.Info("failed to find the remote port, ", err)
-			stream.Close()
-			return
-		}
-		remoteAddr = fmt.Sprintf("127.0.0.1:%d", port)
-	} else {
-		port, err = strconv.Atoi(parts[1])
-		if err != nil {
-			c.logger.Info("failed to find the remote port, ", err)
-			stream.Close()
-			return
-		}
+	// Extract the port from the received address
+	port, resolvedAddr, err := ResolveRemoteAddr(remoteAddr)
+	if err != nil {
+		c.logger.Infof("failed to resolve remote port: %v", err)
+		stream.Close()
+		return
 	}
-	localConnection, err := c.tcpDialer(remoteAddr)
+
+	localConnection, err := TcpDialer(resolvedAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay)
 	if err != nil {
 		c.logger.Errorf("connecting to local address %s is not possible", remoteAddr)
 		stream.Close()
@@ -326,67 +322,6 @@ func (c *TcpMuxTransport) localDialer(stream *smux.Stream, remoteAddr string) {
 	}
 
 	c.logger.Debugf("connected to local address %s successfully", remoteAddr)
+
 	utils.TCPConnectionHandler(stream, localConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffer)
-}
-
-func (c *TcpMuxTransport) tcpDialer(address string) (*net.TCPConn, error) {
-	// Resolve the address to a TCP address
-	tcpAddr, err := net.ResolveTCPAddr("tcp", address)
-	if err != nil {
-		return nil, err
-	}
-
-	// options
-	dialer := &net.Dialer{
-		Timeout:   c.config.DialTimeOut, // Set the connection timeout
-		KeepAlive: c.config.KeepAlive,   // Set the keep-alive duration
-	}
-
-	// Dial the TCP connection with a timeout
-	conn, err := dialer.Dial("tcp", tcpAddr.String())
-	if err != nil {
-		return nil, err
-	}
-
-	// Type assert the net.Conn to *net.TCPConn
-	tcpConn, ok := conn.(*net.TCPConn)
-	if !ok {
-		conn.Close()
-		return nil, fmt.Errorf("failed to convert net.Conn to *net.TCPConn")
-	}
-
-	if !c.config.Nodelay {
-		err = tcpConn.SetNoDelay(false)
-		if err != nil {
-			tcpConn.Close()
-			return nil, err
-		}
-	}
-
-	return tcpConn, nil
-}
-
-func (c *TcpMuxTransport) poolChecker() {
-	ticker := time.NewTicker(time.Millisecond * 350)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-c.ctx.Done():
-			return
-
-		case <-ticker.C:
-			c.logger.Tracef("active connections: %d", c.activeConnections)
-			if c.activeConnections < c.config.ConnectionPool/2 {
-				neededConn := c.config.ConnectionPool - c.activeConnections
-				for i := 0; i < neededConn; i++ {
-					go c.tunnelDialer()
-				}
-
-			}
-
-		}
-
-	}
-
 }

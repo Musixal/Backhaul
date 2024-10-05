@@ -60,7 +60,7 @@ func (c *Client) Start() {
 			SnifferLog:     c.config.SnifferLog,
 		}
 		tcpClient := transport.NewTCPClient(c.ctx, tcpConfig, c.logger)
-		go tcpClient.ChannelDialer()
+		go tcpClient.Start()
 
 	} else if c.config.Transport == config.TCPMUX {
 		tcpMuxConfig := &transport.TcpMuxConfig{
@@ -80,7 +80,7 @@ func (c *Client) Start() {
 			SnifferLog:       c.config.SnifferLog,
 		}
 		tcpMuxClient := transport.NewMuxClient(c.ctx, tcpMuxConfig, c.logger)
-		go tcpMuxClient.ChannelDialer()
+		go tcpMuxClient.Start()
 
 	} else if c.config.Transport == config.WS || c.config.Transport == config.WSS {
 		WsConfig := &transport.WsConfig{
@@ -97,7 +97,8 @@ func (c *Client) Start() {
 			Mode:           c.config.Transport,
 		}
 		WsClient := transport.NewWSClient(c.ctx, WsConfig, c.logger)
-		go WsClient.ChannelDialer()
+		go WsClient.Start()
+
 	} else if c.config.Transport == config.WSMUX || c.config.Transport == config.WSSMUX {
 		wsMuxConfig := &transport.WsMuxConfig{
 			RemoteAddr:       c.config.RemoteAddr,
@@ -117,7 +118,7 @@ func (c *Client) Start() {
 			Mode:             c.config.Transport,
 		}
 		wsMuxClient := transport.NewWSMuxClient(c.ctx, wsMuxConfig, c.logger)
-		go wsMuxClient.ChannelDialer()
+		go wsMuxClient.Start()
 
 	} else if c.config.Transport == config.QUIC {
 		quicConfig := &transport.QuicConfig{
