@@ -3,10 +3,7 @@ package transport
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"fmt"
-	"net"
-	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -111,14 +108,14 @@ func (c *WsTransport) channelDialer() {
 		case <-c.ctx.Done():
 			return
 		default:
-			tunnelWSConn, err := c.wsDialer(c.config.RemoteAddr, "/channel")
+			tunnelWSConn, err := WebSocketDialer(c.config.RemoteAddr, "/channel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode)
 			if err != nil {
 				c.logger.Errorf("failed to dial websocket control channel: %v", err)
 				time.Sleep(c.config.RetryInterval)
 				continue
 			}
 			c.controlChannel = tunnelWSConn
-			c.logger.Info("websocket control channel established successfully")
+			c.logger.Info("control channel established successfully")
 
 			c.config.TunnelStatus = fmt.Sprintf("Connected (%s)", c.config.Mode)
 
@@ -209,7 +206,7 @@ func (c *WsTransport) tunnelDialer() {
 	c.logger.Debugf("initiating new websocket tunnel connection to address %s", c.config.RemoteAddr)
 
 	// Dial to the tunnel server
-	tunnelConn, err := c.wsDialer(c.config.RemoteAddr, "")
+	tunnelConn, err := WebSocketDialer(c.config.RemoteAddr, "/tunnel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode)
 	if err != nil {
 		c.logger.Errorf("failed to dial webSocket tunnel server: %v", err)
 
@@ -267,57 +264,4 @@ func (c *WsTransport) localDialer(tunnelCon *websocket.Conn, remoteAddr string, 
 	c.logger.Debugf("connected to local address %s successfully", remoteAddr)
 
 	utils.WSConnectionHandler(tunnelCon, localConn, c.logger, c.usageMonitor, int(port), c.config.Sniffer)
-}
-
-func (c *WsTransport) wsDialer(addr string, path string) (*websocket.Conn, error) {
-	// Create a TLS configuration that allows insecure connections
-	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true, // Skip server certificate verification
-	}
-
-	// Setup headers with authorization
-	headers := http.Header{}
-	headers.Add("Authorization", fmt.Sprintf("Bearer %v", c.config.Token))
-
-	var wsURL string
-	dialer := websocket.Dialer{}
-	if c.config.Mode == config.WS {
-		wsURL = fmt.Sprintf("ws://%s%s", addr, path)
-		dialer = websocket.Dialer{
-			HandshakeTimeout: c.config.DialTimeOut, // Set handshake timeout
-			NetDial: func(_, addr string) (net.Conn, error) {
-				conn, err := TcpDialer(addr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay)
-				if err != nil {
-					return nil, err
-				}
-				//tcpConn := conn.(*net.TCPConn)
-				conn.SetKeepAlive(true)                     // Enable TCP keepalive
-				conn.SetKeepAlivePeriod(c.config.KeepAlive) // Set keepalive period
-				return conn, nil
-			},
-		}
-	} else {
-		wsURL = fmt.Sprintf("wss://%s%s", addr, path)
-		dialer = websocket.Dialer{
-			TLSClientConfig:  tlsConfig,            // Pass the insecure TLS config here
-			HandshakeTimeout: c.config.DialTimeOut, // Set handshake timeout
-			NetDial: func(_, addr string) (net.Conn, error) {
-				conn, err := TcpDialer(addr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay)
-				if err != nil {
-					return nil, err
-				}
-				conn.SetKeepAlive(true)                     // Enable TCP keepalive
-				conn.SetKeepAlivePeriod(c.config.KeepAlive) // Set keepalive period
-				return conn, nil
-			},
-		}
-	}
-
-	// Dial to the WebSocket server
-	tunnelWSConn, _, err := dialer.Dial(wsURL, headers)
-	if err != nil {
-		return nil, err
-	}
-
-	return tunnelWSConn, nil
 }

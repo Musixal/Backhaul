@@ -2,13 +2,18 @@ package transport
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
+	"net/http"
 	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/gorilla/websocket"
+	"github.com/musix/backhaul/internal/config"
 )
 
 func ResolveRemoteAddr(remoteAddr string) (int, string, error) {
@@ -37,8 +42,8 @@ func ResolveRemoteAddr(remoteAddr string) (int, string, error) {
 	return port, remoteAddr, nil
 }
 
-func TcpDialer(address string, Timeout time.Duration, KeepAlive time.Duration, Nodelay bool) (*net.TCPConn, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+func TcpDialer(address string, timeout time.Duration, keepAlive time.Duration, nodelay bool) (*net.TCPConn, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	// Resolve the address to a TCP address
@@ -50,8 +55,8 @@ func TcpDialer(address string, Timeout time.Duration, KeepAlive time.Duration, N
 	// options
 	dialer := &net.Dialer{
 		Control:   ReusePortControl,
-		Timeout:   Timeout,   // Set the connection timeout
-		KeepAlive: KeepAlive, // Set the keep-alive duration
+		Timeout:   timeout,   // Set the connection timeout
+		KeepAlive: keepAlive, // Set the keep-alive duration
 	}
 
 	// Dial the TCP connection with a timeout
@@ -67,7 +72,7 @@ func TcpDialer(address string, Timeout time.Duration, KeepAlive time.Duration, N
 		return nil, fmt.Errorf("failed to convert net.Conn to *net.TCPConn")
 	}
 
-	if !Nodelay {
+	if !nodelay {
 		err = tcpConn.SetNoDelay(false)
 		if err != nil {
 			tcpConn.Close()
@@ -103,4 +108,52 @@ func ReusePortControl(network, address string, s syscall.RawConn) error {
 	}
 
 	return controlErr
+}
+
+func WebSocketDialer(addr string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType) (*websocket.Conn, error) {
+	// Create a TLS configuration that allows insecure connections
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: true, // Skip server certificate verification
+	}
+
+	// Setup headers with authorization
+	headers := http.Header{}
+	headers.Add("Authorization", fmt.Sprintf("Bearer %v", token))
+
+	var wsURL string
+	dialer := websocket.Dialer{}
+	if mode == config.WS || mode == config.WSMUX {
+		wsURL = fmt.Sprintf("ws://%s%s", addr, path)
+		dialer = websocket.Dialer{
+			HandshakeTimeout: timeout, // Set handshake timeout
+			NetDial: func(_, addr string) (net.Conn, error) {
+				conn, err := TcpDialer(addr, timeout, keepalive, nodelay)
+				if err != nil {
+					return nil, err
+				}
+				return conn, nil
+			},
+		}
+	} else if mode == config.WSS || mode == config.WSSMUX {
+		wsURL = fmt.Sprintf("wss://%s%s", addr, path)
+		dialer = websocket.Dialer{
+			TLSClientConfig:  tlsConfig, // Pass the insecure TLS config here
+			HandshakeTimeout: timeout,   // Set handshake timeout
+			NetDial: func(_, addr string) (net.Conn, error) {
+				conn, err := TcpDialer(addr, timeout, keepalive, nodelay)
+				if err != nil {
+					return nil, err
+				}
+				return conn, nil
+			},
+		}
+	}
+
+	// Dial to the WebSocket server
+	tunnelWSConn, _, err := dialer.Dial(wsURL, headers)
+	if err != nil {
+		return nil, err
+	}
+
+	return tunnelWSConn, nil
 }

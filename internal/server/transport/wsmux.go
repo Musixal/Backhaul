@@ -227,7 +227,7 @@ func (s *WsMuxTransport) tunnelListener() {
 			if r.URL.Path == "/channel" && s.controlChannel == nil {
 				s.controlChannel = conn
 
-				s.logger.Info("wsmux control channel established successfully")
+				s.logger.Info("control channel established successfully")
 
 				go s.channelHandler()
 				go s.parsePortMappings()

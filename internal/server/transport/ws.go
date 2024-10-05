@@ -151,7 +151,7 @@ func (s *WsTransport) channelHandler() {
 		case <-ticker.C:
 			err := s.controlChannel.WriteMessage(websocket.BinaryMessage, []byte{utils.SG_HB})
 			if err != nil {
-				s.logger.Errorf("Failed to send heartbeat signal. Error: %v. Restarting server...", err)
+				s.logger.Errorf("failed to send heartbeat signal. Error: %v. Restarting server...", err)
 				go s.Restart()
 				return
 			}
@@ -215,20 +215,20 @@ func (s *WsTransport) tunnelListener() {
 				s.config.TunnelStatus = fmt.Sprintf("Connected (%s)", s.config.Mode)
 
 				return
-			}
-
-			wsConn := TunnelChannel{
-				conn: conn,
-				ping: make(chan struct{}),
-				mu:   &sync.Mutex{},
-			}
-			select {
-			case s.tunnelChannel <- wsConn:
-				go s.keepAlive(wsConn)
-				s.logger.Debugf("websocket connection accepted from %s", conn.RemoteAddr().String())
-			default:
-				s.logger.Warnf("websocket tunnel channel is full, closing connection from %s", conn.RemoteAddr().String())
-				conn.Close()
+			} else if r.URL.Path == "/tunnel" {
+				wsConn := TunnelChannel{
+					conn: conn,
+					ping: make(chan struct{}),
+					mu:   &sync.Mutex{},
+				}
+				select {
+				case s.tunnelChannel <- wsConn:
+					go s.keepAlive(wsConn)
+					s.logger.Debugf("websocket connection accepted from %s", conn.RemoteAddr().String())
+				default:
+					s.logger.Warnf("websocket tunnel channel is full, closing connection from %s", conn.RemoteAddr().String())
+					conn.Close()
+				}
 			}
 		}),
 	}

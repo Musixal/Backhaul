@@ -175,7 +175,7 @@ func (s *TcpMuxTransport) channelHandshake() {
 
 			s.controlChannel = conn
 
-			s.logger.Info("tcpmux control channel successfully established.")
+			s.logger.Info("control channel successfully established.")
 
 			return
 		}

@@ -121,7 +121,7 @@ func (c *TcpMuxTransport) channelDialer() {
 		default:
 			tunnelConn, err := TcpDialer(c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay)
 			if err != nil {
-				c.logger.Errorf("tcpmux channel dialer: error dialing remote address %s: %v", c.config.RemoteAddr, err)
+				c.logger.Errorf("channel dialer: error dialing remote address %s: %v", c.config.RemoteAddr, err)
 				time.Sleep(c.config.RetryInterval)
 				continue
 			}
@@ -157,7 +157,7 @@ func (c *TcpMuxTransport) channelDialer() {
 
 			if message == c.config.Token {
 				c.controlChannel = tunnelConn
-				c.logger.Info("tcpmux control channel established successfully")
+				c.logger.Info("control channel established successfully")
 
 				c.config.TunnelStatus = "Connected (TCPMux)"
 				go c.channelHandler()
