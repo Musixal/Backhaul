@@ -26,6 +26,7 @@ type TcpMuxTransport struct {
 	usageMonitor      *web.Usage
 	restartMutex      sync.Mutex
 	activeConnections int32
+	lastRequest       time.Time
 }
 
 type TcpMuxConfig struct {
@@ -68,6 +69,7 @@ func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logru
 		controlChannel:    nil, // will be set when a control connection is established
 		activeConnections: 0,
 		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
+		lastRequest:       time.Now(),
 	}
 
 	return client
@@ -106,6 +108,7 @@ func (c *TcpMuxTransport) Restart() {
 	c.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.config.Sniffer, &c.config.TunnelStatus, c.logger)
 	c.config.TunnelStatus = ""
 	c.activeConnections = 0
+	c.lastRequest = time.Now()
 
 	go c.Start()
 
@@ -176,7 +179,7 @@ func (c *TcpMuxTransport) channelDialer() {
 }
 
 func (c *TcpMuxTransport) poolMaintainer() {
-	ticker := time.NewTicker(time.Millisecond * 350)
+	ticker := time.NewTicker(time.Millisecond * 500)
 	defer ticker.Stop()
 
 	for {
@@ -185,9 +188,12 @@ func (c *TcpMuxTransport) poolMaintainer() {
 			return
 
 		case <-ticker.C:
+			if time.Since(c.lastRequest).Milliseconds() < 500 {
+				continue
+			}
 			activeConnections := int(c.activeConnections)
 			c.logger.Tracef("active connections: %d", c.activeConnections)
-			if activeConnections < c.config.ConnectionPool/2 {
+			if activeConnections < c.config.ConnectionPool {
 				neededConn := c.config.ConnectionPool - activeConnections
 				for i := 0; i < neededConn; i++ {
 					go c.tunnelDialer()
@@ -227,6 +233,7 @@ func (c *TcpMuxTransport) channelHandler() {
 			switch msg {
 			case utils.SG_Chan:
 				c.logger.Debug("channel signal received, initiating tunnel dialer")
+				c.lastRequest = time.Now()
 				go c.tunnelDialer()
 
 			case utils.SG_Closed:
