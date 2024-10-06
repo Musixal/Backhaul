@@ -20,9 +20,10 @@ archives:
   - format: tar.gz
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
     files:
-      - !README.md  # Exclude README.md
-      - !LICENSE    # Exclude LICENSE
       - ./          # Include all other files
+    exclude:
+      - README.md   # Exclude README.md
+      - LICENSE     # Exclude LICENSE
 
 release:
    github:
