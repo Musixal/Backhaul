@@ -428,34 +428,28 @@ func (s *TcpMuxTransport) handleLoop() {
 }
 
 func (s *TcpMuxTransport) handleSession(session *smux.Session, next chan struct{}) {
-	counter := 0
 	done := make(chan struct{}, s.config.MuxCon)
+	counter := 0
 
 	for {
 		select {
 		case <-s.ctx.Done():
+			for counter > 0 { // Ensure all goroutines finish before returning
+				<-done
+				counter--
+			}
 			return
+
 		case incomingConn := <-s.localChannel:
 			stream, err := session.OpenStream()
 			if err != nil {
-				s.logger.Errorf("failed to open a new mux stream: %v", err)
-				if err := session.Close(); err != nil {
-					s.logger.Errorf("failed to close mux stream: %v", err)
-				}
-				s.localChannel <- incomingConn // back to local channel
-				next <- struct{}{}
+				s.handleSessionError(session, &incomingConn, next, done, counter, err)
 				return
 			}
 
 			// Send the target port over the tunnel connection
 			if err := utils.SendBinaryString(stream, incomingConn.remoteAddr); err != nil {
-				s.logger.Errorf("failed to send address %v over stream: %v", incomingConn.remoteAddr, err)
-
-				if err := session.Close(); err != nil {
-					s.logger.Errorf("failed to close mux stream: %v", err)
-				}
-				s.localChannel <- incomingConn // back to local channel
-				next <- struct{}{}
+				s.handleSessionError(session, &incomingConn, next, done, counter, err)
 				return
 			}
 
@@ -465,30 +459,61 @@ func (s *TcpMuxTransport) handleSession(session *smux.Session, next chan struct{
 				done <- struct{}{}
 			}()
 
-			counter += 1
+			counter++
 
+			// Check if the maximum number of multiplexed connections is reached
 			if counter == s.config.MuxCon {
-				next <- struct{}{}
-
-				select {
-				case s.reqNewConnChan <- struct{}{}:
-					// Successfully requested a new connection
-				default:
-					// The channel is full, do nothing
-					s.logger.Warn("channel is full, cannot request a new connection")
-				}
-
-				for i := 0; i < s.config.MuxCon; i++ {
-					<-done
-				}
-
-				close(done)
-
-				if err := session.Close(); err != nil {
-					s.logger.Errorf("failed to close mux stream after session completed: %v", err)
-				}
+				s.finalizeSession(session, next, done, counter)
 				return
 			}
 		}
+	}
+}
+
+func (s *TcpMuxTransport) handleSessionError(session *smux.Session, incomingConn *LocalTCPConn, next chan struct{}, done chan struct{}, counter int, err error) {
+	s.logger.Errorf("failed to handle session: %v", err)
+
+	// Put connection back to local channel
+	s.localChannel <- *incomingConn
+
+	// Notify to start a new session
+	next <- struct{}{}
+
+	// Attempt to request a new connection
+	select {
+	case s.reqNewConnChan <- struct{}{}:
+	default:
+		s.logger.Warn("request new connection channel is full")
+	}
+
+	// Wait for all active handlers to finish
+	for i := 0; i < counter; i++ {
+		<-done
+	}
+
+	// Ensure session is closed
+	if closeErr := session.Close(); closeErr != nil {
+		s.logger.Errorf("failed to close session: %v", closeErr)
+	}
+}
+
+func (s *TcpMuxTransport) finalizeSession(session *smux.Session, next chan struct{}, done chan struct{}, counter int) {
+	next <- struct{}{}
+
+	// Attempt to request a new connection
+	select {
+	case s.reqNewConnChan <- struct{}{}:
+	default:
+		s.logger.Warn("request new connection channel is full")
+	}
+
+	// Wait for all active handlers to finish
+	for i := 0; i < counter; i++ {
+		<-done
+	}
+
+	// Ensure session is closed after completing the mux session
+	if err := session.Close(); err != nil {
+		s.logger.Errorf("failed to close session after session completed: %v", err)
 	}
 }

@@ -262,7 +262,6 @@ func (c *WsMuxTransport) handleSession(tunnelConn *websocket.Conn) {
 				if err := session.Close(); err != nil {
 					c.logger.Errorf("failed to close mux stream: %v", err)
 				}
-				tunnelConn.Close()
 				return
 			}
 			go c.localDialer(stream, remoteAddr)

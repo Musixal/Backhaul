@@ -223,7 +223,7 @@ func (s *WsTransport) tunnelListener() {
 				}
 				select {
 				case s.tunnelChannel <- wsConn:
-					go s.keepAlive(wsConn)
+					go s.keepAlive(&wsConn)
 					s.logger.Debugf("websocket connection accepted from %s", conn.RemoteAddr().String())
 				default:
 					s.logger.Warnf("websocket tunnel channel is full, closing connection from %s", conn.RemoteAddr().String())
@@ -387,7 +387,7 @@ func (s *WsTransport) handleLoop() {
 	}
 }
 
-func (s *WsTransport) keepAlive(conn TunnelChannel) {
+func (s *WsTransport) keepAlive(conn *TunnelChannel) {
 	ticker := time.NewTicker(s.config.Heartbeat) // Send periodic pings to the client
 
 	defer ticker.Stop()
