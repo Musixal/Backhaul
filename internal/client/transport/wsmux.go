@@ -24,7 +24,6 @@ type WsMuxTransport struct {
 	cancel            context.CancelFunc
 	logger            *logrus.Logger
 	controlChannel    *websocket.Conn
-	dialLimitChan     chan struct{}
 	usageMonitor      *web.Usage
 	restartMutex      sync.Mutex
 	activeConnections int32
@@ -40,7 +39,6 @@ type WsMuxConfig struct {
 	KeepAlive        time.Duration
 	RetryInterval    time.Duration
 	DialTimeOut      time.Duration
-	DialLimit        int
 	MuxVersion       int
 	MaxFrameSize     int
 	MaxReceiveBuffer int
@@ -73,7 +71,6 @@ func NewWSMuxClient(parentCtx context.Context, config *WsMuxConfig, logger *logr
 		activeConnections: 0,
 		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 		lastRequest:       time.Now(),
-		dialLimitChan:     make(chan struct{}, config.DialLimit),
 	}
 
 	return client
@@ -113,7 +110,6 @@ func (c *WsMuxTransport) Restart() {
 	c.config.TunnelStatus = ""
 	c.activeConnections = 0
 	c.lastRequest = time.Now()
-	c.dialLimitChan = make(chan struct{}, c.config.DialLimit)
 
 	go c.Start()
 
@@ -166,7 +162,6 @@ func (c *WsMuxTransport) poolMaintainer() {
 				neededConn := c.config.ConnectionPool - activeConnections
 				for i := 0; i < neededConn; i++ {
 					go c.tunnelDialer()
-					c.dialLimitChan <- struct{}{}
 				}
 
 			}
@@ -178,8 +173,8 @@ func (c *WsMuxTransport) poolMaintainer() {
 }
 
 func (c *WsMuxTransport) channelHandler() {
-	msgChan := make(chan byte, 1000)
-	errChan := make(chan error, 1000)
+	msgChan := make(chan byte, 100)
+	errChan := make(chan error, 100)
 
 	// Goroutine to handle the blocking ReceiveBinaryString
 	go func() {
@@ -205,7 +200,6 @@ func (c *WsMuxTransport) channelHandler() {
 				c.logger.Debug("channel signal received, initiating tunnel dialer")
 				c.lastRequest = time.Now()
 				go c.tunnelDialer()
-				c.dialLimitChan <- struct{}{}
 			case utils.SG_HB:
 				c.logger.Debug("heartbeat received successfully")
 			case utils.SG_Closed:
@@ -236,17 +230,12 @@ func (c *WsMuxTransport) tunnelDialer() {
 	// Dial to the tunnel server
 	tunnelWSConn, err := WebSocketDialer(c.config.RemoteAddr, "/tunnel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode)
 	if err != nil {
-		<-c.dialLimitChan
-
 		c.logger.Errorf("failed to dial %s tunnel server: %v", c.config.Mode, err)
 
 		// Decrement active connections on failure
 		atomic.AddInt32(&c.activeConnections, -1)
 		return
 	}
-
-	<-c.dialLimitChan
-
 	c.handleSession(tunnelWSConn)
 }
 
