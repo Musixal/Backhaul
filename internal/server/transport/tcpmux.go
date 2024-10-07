@@ -164,12 +164,14 @@ func (s *TcpMuxTransport) channelHandshake() {
 
 			if msg != s.config.Token {
 				s.logger.Warnf("invalid security token received: %s", msg)
+				conn.Close()
 				continue
 			}
 
 			err = utils.SendBinaryString(conn, s.config.Token)
 			if err != nil {
 				s.logger.Errorf("failed to send security token: %v", err)
+				conn.Close()
 				continue
 			}
 
@@ -256,7 +258,6 @@ func (s *TcpMuxTransport) acceptTunnelConn(listener net.Listener) {
 	for {
 		select {
 		case <-s.ctx.Done():
-			close(s.tunnelChannel)
 			return
 		default:
 			s.logger.Debugf("waiting for accept incoming tunnel connection on %s", listener.Addr().String())
