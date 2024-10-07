@@ -27,7 +27,6 @@ type WsMuxTransport struct {
 	usageMonitor      *web.Usage
 	restartMutex      sync.Mutex
 	activeConnections int32
-	lastRequest       time.Time
 }
 type WsMuxConfig struct {
 	RemoteAddr       string
@@ -70,7 +69,6 @@ func NewWSMuxClient(parentCtx context.Context, config *WsMuxConfig, logger *logr
 		controlChannel:    nil, // will be set when a control connection is established
 		activeConnections: 0,
 		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
-		lastRequest:       time.Now(),
 	}
 
 	return client
@@ -109,7 +107,6 @@ func (c *WsMuxTransport) Restart() {
 	c.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.config.Sniffer, &c.config.TunnelStatus, c.logger)
 	c.config.TunnelStatus = ""
 	c.activeConnections = 0
-	c.lastRequest = time.Now()
 
 	go c.Start()
 
@@ -144,7 +141,7 @@ func (c *WsMuxTransport) channelDialer() {
 }
 
 func (c *WsMuxTransport) poolMaintainer() {
-	ticker := time.NewTicker(time.Millisecond * 500)
+	ticker := time.NewTicker(time.Millisecond * 350)
 	defer ticker.Stop()
 
 	for {
@@ -153,12 +150,9 @@ func (c *WsMuxTransport) poolMaintainer() {
 			return
 
 		case <-ticker.C:
-			if time.Since(c.lastRequest).Milliseconds() < 500 {
-				continue
-			}
 			activeConnections := int(c.activeConnections)
 			c.logger.Tracef("active connections: %d", c.activeConnections)
-			if activeConnections < c.config.ConnectionPool {
+			if activeConnections < c.config.ConnectionPool/2 {
 				neededConn := c.config.ConnectionPool - activeConnections
 				for i := 0; i < neededConn; i++ {
 					go c.tunnelDialer()
@@ -198,7 +192,6 @@ func (c *WsMuxTransport) channelHandler() {
 			switch msg {
 			case utils.SG_Chan:
 				c.logger.Debug("channel signal received, initiating tunnel dialer")
-				c.lastRequest = time.Now()
 				go c.tunnelDialer()
 			case utils.SG_HB:
 				c.logger.Debug("heartbeat received successfully")
