@@ -167,8 +167,8 @@ func (c *WsMuxTransport) poolMaintainer() {
 }
 
 func (c *WsMuxTransport) channelHandler() {
-	msgChan := make(chan byte, 100)
-	errChan := make(chan error, 100)
+	msgChan := make(chan byte, 1000)
+	errChan := make(chan error, 1000)
 
 	// Goroutine to handle the blocking ReceiveBinaryString
 	go func() {
