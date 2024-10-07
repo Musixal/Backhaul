@@ -43,6 +43,34 @@ func ResolveRemoteAddr(remoteAddr string) (int, string, error) {
 }
 
 func TcpDialer(address string, timeout time.Duration, keepAlive time.Duration, nodelay bool) (*net.TCPConn, error) {
+	var tcpConn *net.TCPConn
+	var err error
+
+	retries := 3               // Number of retries
+	backoff := 1 * time.Second // Initial backoff duration
+
+	for i := 0; i < retries; i++ {
+		// Attempt to establish a TCP connection
+		tcpConn, err = attemptTcpDialer(address, timeout, keepAlive, nodelay)
+		if err == nil {
+			// Connection successful
+			return tcpConn, nil
+		}
+
+		// If this is the last retry, return the error
+		if i == retries-1 {
+			break
+		}
+
+		// Log retry attempt and wait before retrying
+		time.Sleep(backoff)
+		backoff *= 2 // Exponential backoff (double the wait time after each failure)
+	}
+
+	return nil, fmt.Errorf("failed to dial TCP address %s after %d retries: %v", address, retries, err)
+}
+
+func attemptTcpDialer(address string, timeout time.Duration, keepAlive time.Duration, nodelay bool) (*net.TCPConn, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -52,7 +80,7 @@ func TcpDialer(address string, timeout time.Duration, keepAlive time.Duration, n
 		return nil, err
 	}
 
-	// options
+	// Options
 	dialer := &net.Dialer{
 		Control:   ReusePortControl,
 		Timeout:   timeout,   // Set the connection timeout
@@ -111,6 +139,34 @@ func ReusePortControl(network, address string, s syscall.RawConn) error {
 }
 
 func WebSocketDialer(addr string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType) (*websocket.Conn, error) {
+	var tunnelWSConn *websocket.Conn
+	var err error
+
+	retries := 3               // Number of retries
+	backoff := 1 * time.Second // Initial backoff duration
+
+	for i := 0; i < retries; i++ {
+		// Attempt to dial the WebSocket
+		tunnelWSConn, err = attemptDialWebSocket(addr, path, timeout, keepalive, nodelay, token, mode)
+		if err == nil {
+			// If successful, return the connection
+			return tunnelWSConn, nil
+		}
+
+		// If this is the last retry, return the error
+		if i == retries-1 {
+			break
+		}
+
+		// Log the retry attempt and wait before retrying
+		time.Sleep(backoff)
+		backoff *= 2 // Exponential backoff (double the wait time after each failure)
+	}
+
+	return nil, fmt.Errorf("failed to dial WebSocket server after %d retries: %v", retries, err)
+}
+
+func attemptDialWebSocket(addr string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType) (*websocket.Conn, error) {
 	// Create a TLS configuration that allows insecure connections
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: true, // Skip server certificate verification
