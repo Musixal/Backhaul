@@ -113,6 +113,7 @@ To start using the solution, you'll need to configure both server and client com
    nodelay = false               # Use TCP_NODELAY (optional, default: false).
    retry_interval = 3            # Retry interval in seconds (optional, default: 3s).
    dial_timeout = 60             # Sets the max wait time for establishing a network connection. (optional, default: 60s)
+   dial_limit = 100               # Maximum number of concurrent connection attempts to the server. (optional, default: 100)
    mux_version = 1               # SMUX protocol version (1 or 2). Version 2 may have extra features. (optional)
    mux_framesize = 32768         # 32 KB. The maximum size of a frame that can be sent over a connection. (optional)
    mux_recievebuffer = 4194304   # 4 MB. The maximum buffer size for incoming data per connection. (optional)
@@ -158,6 +159,7 @@ To start using the solution, you'll need to configure both server and client com
    connection_pool = 8
    keepalive_period = 75
    dial_timeout = 60
+   dial_limit = 100
    nodelay = true 
    retry_interval = 3
    sniffer = false
@@ -211,6 +213,7 @@ To start using the solution, you'll need to configure both server and client com
    connection_pool = 8
    keepalive_period = 75
    dial_timeout = 60
+   dial_limit = 100
    retry_interval = 3
    nodelay = true 
    mux_version = 1
@@ -258,6 +261,7 @@ To start using the solution, you'll need to configure both server and client com
    connection_pool = 8
    keepalive_period = 75 
    dial_timeout = 60
+   dial_limit = 100
    retry_interval = 3
    nodelay = true 
    sniffer = false 
@@ -300,6 +304,7 @@ To start using the solution, you'll need to configure both server and client com
    connection_pool = 8
    keepalive_period = 75
    dial_timeout = 60
+   dial_limit = 100
    retry_interval = 3  
    nodelay = true 
    sniffer = false 
@@ -346,6 +351,7 @@ To start using the solution, you'll need to configure both server and client com
    connection_pool = 8
    keepalive_period = 75
    dial_timeout = 60
+   dial_limit = 100
    nodelay = true
    retry_interval = 3
    mux_version = 1
@@ -392,6 +398,7 @@ To start using the solution, you'll need to configure both server and client com
    token = "your_token" 
    keepalive_period = 75
    dial_timeout = 60
+   dial_limit = 100
    nodelay = true
    retry_interval = 3
    connection_pool = 8
