@@ -246,6 +246,7 @@ func (s *WsMuxTransport) tunnelListener() {
 				case s.tunnelChannel <- session: // ok
 				default:
 					s.logger.Warnf("tunnel listener channel is full, discarding TCP connection from %s", conn.LocalAddr().String())
+					conn.Close()
 				}
 			}
 		}),
@@ -365,7 +366,7 @@ func (s *WsMuxTransport) acceptLocalConn(listener net.Listener, remoteAddr strin
 
 			default: // channel is full, discard the connection
 				s.logger.Warnf("local listener channel is full, discarding TCP connection from %s", tcpConn.LocalAddr().String())
-				tcpConn.Close()
+				conn.Close()
 			}
 		}
 	}
@@ -406,7 +407,7 @@ func (s *WsMuxTransport) handleSession(session *smux.Session, next chan struct{}
 				return
 			}
 			// In my tests, sending the data frame immediately after opening the stream caused SMUX to misinterpret the header in WebSocket mode.
-			// To prevent this issue, a short delay of 1 millisecond is introduced after opening the stream
+			// To prevent this issue, a short delay of 250 microsecond is introduced after opening the stream
 			// before sending any data. This ensures proper header parsing by SMUX.
 			time.Sleep(250 * time.Microsecond)
 
@@ -418,7 +419,6 @@ func (s *WsMuxTransport) handleSession(session *smux.Session, next chan struct{}
 
 			// Handle data exchange between connections
 			go func() {
-
 				utils.TCPConnectionHandler(stream, incomingConn.conn, s.logger, s.usageMonitor, incomingConn.conn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
 				done <- struct{}{}
 			}()
