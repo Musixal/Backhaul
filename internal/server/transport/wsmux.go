@@ -407,9 +407,9 @@ func (s *WsMuxTransport) handleSession(session *smux.Session, next chan struct{}
 				return
 			}
 			// In my tests, sending the data frame immediately after opening the stream caused SMUX to misinterpret the header in WebSocket mode.
-			// To prevent this issue, a short delay of 250 microsecond is introduced after opening the stream
+			// To prevent this issue, a short delay of 1ms is introduced after opening the stream
 			// before sending any data. This ensures proper header parsing by SMUX.
-			time.Sleep(250 * time.Microsecond)
+			time.Sleep(1 * time.Millisecond)
 
 			// Send the target port over the tunnel connection
 			if err := utils.SendBinaryString(stream, incomingConn.remoteAddr); err != nil {
