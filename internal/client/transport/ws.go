@@ -23,6 +23,7 @@ type WsTransport struct {
 	cancel            context.CancelFunc
 	logger            *logrus.Logger
 	controlChannel    *websocket.Conn
+	dialLimitChan     chan struct{}
 	restartMutex      sync.Mutex
 	usageMonitor      *web.Usage
 	activeConnections int32
@@ -38,6 +39,7 @@ type WsConfig struct {
 	KeepAlive      time.Duration
 	RetryInterval  time.Duration
 	DialTimeOut    time.Duration
+	DialLimit      int
 	ConnectionPool int
 	WebPort        int
 	Mode           config.TransportType
@@ -58,6 +60,7 @@ func NewWSClient(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 		activeConnections: 0,
 		lastRequest:       time.Now(),
+		dialLimitChan:     make(chan struct{}, config.DialLimit),
 	}
 
 	return client
@@ -98,6 +101,7 @@ func (c *WsTransport) Restart() {
 	c.config.TunnelStatus = ""
 	c.activeConnections = 0
 	c.lastRequest = time.Now()
+	c.dialLimitChan = make(chan struct{}, c.config.DialLimit)
 
 	go c.Start()
 
@@ -149,6 +153,7 @@ func (c *WsTransport) poolMaintainer() {
 				neededConn := c.config.ConnectionPool - activeConnections
 				for i := 0; i < neededConn; i++ {
 					go c.tunnelDialer()
+					c.dialLimitChan <- struct{}{}
 				}
 
 			}
@@ -160,8 +165,8 @@ func (c *WsTransport) poolMaintainer() {
 }
 
 func (c *WsTransport) channelHandler() {
-	msgChan := make(chan byte, 100)
-	errChan := make(chan error, 100)
+	msgChan := make(chan byte, 1000)
+	errChan := make(chan error, 1000)
 
 	// Goroutine to handle the blocking ReceiveBinaryString
 	go func() {
@@ -174,6 +179,7 @@ func (c *WsTransport) channelHandler() {
 			msgChan <- msg[0]
 		}
 	}()
+
 	// Main loop to listen for context cancellation or received messages
 	for {
 		select {
@@ -186,6 +192,7 @@ func (c *WsTransport) channelHandler() {
 				c.logger.Debug("channel signal received, initiating tunnel dialer")
 				c.lastRequest = time.Now()
 				go c.tunnelDialer()
+				c.dialLimitChan <- struct{}{}
 			case utils.SG_Closed:
 				c.logger.Info("control channel has been closed by the server")
 				go c.Restart()
@@ -215,12 +222,16 @@ func (c *WsTransport) tunnelDialer() {
 	// Dial to the tunnel server
 	tunnelConn, err := WebSocketDialer(c.config.RemoteAddr, "/tunnel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode)
 	if err != nil {
+		<-c.dialLimitChan
+
 		c.logger.Errorf("failed to dial webSocket tunnel server: %v", err)
 
 		// Decrement active connections on failure
 		atomic.AddInt32(&c.activeConnections, -1)
 		return
 	}
+
+	<-c.dialLimitChan
 
 	for {
 		select {

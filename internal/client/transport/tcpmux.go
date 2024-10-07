@@ -23,6 +23,7 @@ type TcpMuxTransport struct {
 	cancel            context.CancelFunc
 	logger            *logrus.Logger
 	controlChannel    net.Conn
+	dialLimitChan     chan struct{}
 	usageMonitor      *web.Usage
 	restartMutex      sync.Mutex
 	activeConnections int32
@@ -39,6 +40,7 @@ type TcpMuxConfig struct {
 	KeepAlive        time.Duration
 	RetryInterval    time.Duration
 	DialTimeOut      time.Duration
+	DialLimit        int
 	MuxVersion       int
 	MaxFrameSize     int
 	MaxReceiveBuffer int
@@ -70,6 +72,7 @@ func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logru
 		activeConnections: 0,
 		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 		lastRequest:       time.Now(),
+		dialLimitChan:     make(chan struct{}, config.DialLimit),
 	}
 
 	return client
@@ -109,6 +112,7 @@ func (c *TcpMuxTransport) Restart() {
 	c.config.TunnelStatus = ""
 	c.activeConnections = 0
 	c.lastRequest = time.Now()
+	c.dialLimitChan = make(chan struct{}, c.config.DialLimit)
 
 	go c.Start()
 
@@ -197,6 +201,7 @@ func (c *TcpMuxTransport) poolMaintainer() {
 				neededConn := c.config.ConnectionPool - activeConnections
 				for i := 0; i < neededConn; i++ {
 					go c.tunnelDialer()
+					c.dialLimitChan <- struct{}{}
 				}
 
 			}
@@ -208,8 +213,8 @@ func (c *TcpMuxTransport) poolMaintainer() {
 }
 
 func (c *TcpMuxTransport) channelHandler() {
-	msgChan := make(chan byte, 100)
-	errChan := make(chan error, 100)
+	msgChan := make(chan byte, 1000)
+	errChan := make(chan error, 1000)
 
 	// Goroutine to handle the blocking ReceiveBinaryString
 	go func() {
@@ -235,7 +240,7 @@ func (c *TcpMuxTransport) channelHandler() {
 				c.logger.Debug("channel signal received, initiating tunnel dialer")
 				c.lastRequest = time.Now()
 				go c.tunnelDialer()
-
+				c.dialLimitChan <- struct{}{}
 			case utils.SG_Closed:
 				c.logger.Info("control channel has been closed by the server")
 				go c.Restart()
@@ -265,12 +270,16 @@ func (c *TcpMuxTransport) tunnelDialer() {
 	// Dial to the tunnel server
 	tunnelConn, err := TcpDialer(c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay)
 	if err != nil {
+		<-c.dialLimitChan
+
 		c.logger.Errorf("failed to dial tunnel server: %v", err)
 
 		// Decrement active connections on failure
 		atomic.AddInt32(&c.activeConnections, -1)
 		return
 	}
+	<-c.dialLimitChan
+
 	c.handleSession(tunnelConn)
 }
 

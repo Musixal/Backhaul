@@ -16,6 +16,7 @@ const ( // Default values
 	defaultKeepAlive      = 75
 	deafultHeartbeat      = 40 // 40 seconds
 	defaultDialTimeout    = 60 // 60 seconds
+	defaultDialLimit      = 100 // 100 concurrent connection
 	// related to smux
 	defaultMuxVersion       = 1
 	defaultMaxFrameSize     = 32768   // 32KB
@@ -123,6 +124,11 @@ func applyDefaults(cfg *config.Config) {
 	// Timeout
 	if cfg.Client.DialTimeout < 1 { // Minimum accepted value is 1 second
 		cfg.Client.DialTimeout = defaultDialTimeout
+	}
+
+	// Dial Limit
+	if cfg.Client.DialLimit < 1 { // Minimum accepted value is 1 connection
+		cfg.Client.DialLimit = defaultDialLimit
 	}
 
 	// Mux concurrancy

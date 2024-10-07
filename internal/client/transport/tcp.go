@@ -21,6 +21,7 @@ type TcpTransport struct {
 	cancel            context.CancelFunc
 	logger            *logrus.Logger
 	controlChannel    net.Conn
+	dialLimitChan     chan struct{}
 	usageMonitor      *web.Usage
 	restartMutex      sync.Mutex
 	activeConnections int32
@@ -34,6 +35,7 @@ type TcpConfig struct {
 	KeepAlive      time.Duration
 	RetryInterval  time.Duration
 	DialTimeOut    time.Duration
+	DialLimit      int
 	ConnectionPool int
 	WebPort        int
 	Nodelay        bool
@@ -55,6 +57,7 @@ func NewTCPClient(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 		activeConnections: 0,
 		lastRequest:       time.Now(),
+		dialLimitChan:     make(chan struct{}, config.DialLimit),
 	}
 
 	return client
@@ -93,6 +96,7 @@ func (c *TcpTransport) Restart() {
 	c.config.TunnelStatus = ""
 	c.activeConnections = 0
 	c.lastRequest = time.Now()
+	c.dialLimitChan = make(chan struct{}, c.config.DialLimit)
 
 	go c.Start()
 
@@ -182,6 +186,7 @@ func (c *TcpTransport) poolMaintainer() {
 				neededConn := c.config.ConnectionPool - activeConnections
 				for i := 0; i < neededConn; i++ {
 					go c.tunnelDialer()
+					c.dialLimitChan <- struct{}{}
 				}
 
 			}
@@ -193,8 +198,8 @@ func (c *TcpTransport) poolMaintainer() {
 }
 
 func (c *TcpTransport) channelHandler() {
-	msgChan := make(chan byte, 100)
-	errChan := make(chan error, 100)
+	msgChan := make(chan byte, 1000)
+	errChan := make(chan error, 1000)
 
 	// Goroutine to handle the blocking ReceiveBinaryString
 	go func() {
@@ -220,6 +225,7 @@ func (c *TcpTransport) channelHandler() {
 				c.logger.Debug("channel signal received, initiating tunnel dialer")
 				c.lastRequest = time.Now()
 				go c.tunnelDialer()
+				c.dialLimitChan <- struct{}{}
 			case utils.SG_HB:
 				c.logger.Debug("heartbeat signal received successfully")
 			case utils.SG_Closed:
@@ -250,12 +256,16 @@ func (c *TcpTransport) tunnelDialer() {
 	// Dial to the tunnel server
 	tcpConn, err := TcpDialer(c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay)
 	if err != nil {
+		<-c.dialLimitChan
+
 		c.logger.Error("failed to dial tunnel server: ", err)
 
 		// Decrement active connections on failure
 		atomic.AddInt32(&c.activeConnections, -1)
 		return
 	}
+
+	<-c.dialLimitChan
 
 	// Attempt to receive the remote address from the tunnel server
 	remoteAddr, err := utils.ReceiveBinaryString(tcpConn)
