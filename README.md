@@ -71,7 +71,7 @@ To start using the solution, you'll need to configure both server and client com
     token = "your_token"          # Authentication token for secure communication (optional).
     keepalive_period = 75         # Interval in seconds to send keep-alive packets.(optional, default: 75s)
     nodelay = false               # Enable TCP_NODELAY (optional, default: false).
-    channel_size = 2048           # Tunnel channel size. Excess connections are discarded. (optional, default: 2048).
+    channel_size = 2048           # Tunnel and Local channel size. Excess connections are discarded. (optional, default: 2048).
     heartbeat = 40                # In seconds. Ping interval for tunnel stability. Min: 1s. (Optional, default: 40s)
     mux_con = 8                   # Mux concurrency. Number of connections that can be multiplexed into a single stream (optional, default: 8).
     mux_version = 1               # SMUX protocol version (1 or 2). Version 2 may have extra features. (optional)
@@ -112,7 +112,7 @@ To start using the solution, you'll need to configure both server and client com
    keepalive_period = 75         # Interval in seconds to send keep-alive packets. (optional, default: 75s)
    nodelay = false               # Use TCP_NODELAY (optional, default: false).
    retry_interval = 3            # Retry interval in seconds (optional, default: 3s).
-   dial_timeout = 60             # Sets the max wait time for establishing a network connection. (optional, default: 60s)
+   dial_timeout = 10             # Sets the max wait time for establishing a network connection. (optional, default: 10s)
    dial_limit = 100               # Maximum number of concurrent connection attempts to the server. (optional, default: 100)
    mux_version = 1               # SMUX protocol version (1 or 2). Version 2 may have extra features. (optional)
    mux_framesize = 32768         # 32 KB. The maximum size of a frame that can be sent over a connection. (optional)
@@ -158,7 +158,7 @@ To start using the solution, you'll need to configure both server and client com
    token = "your_token" 
    connection_pool = 8
    keepalive_period = 75
-   dial_timeout = 60
+   dial_timeout = 10
    dial_limit = 100
    nodelay = true 
    retry_interval = 3
@@ -212,7 +212,7 @@ To start using the solution, you'll need to configure both server and client com
    token = "your_token" 
    connection_pool = 8
    keepalive_period = 75
-   dial_timeout = 60
+   dial_timeout = 10
    dial_limit = 100
    retry_interval = 3
    nodelay = true 
@@ -260,7 +260,7 @@ To start using the solution, you'll need to configure both server and client com
    token = "your_token" 
    connection_pool = 8
    keepalive_period = 75 
-   dial_timeout = 60
+   dial_timeout = 10
    dial_limit = 100
    retry_interval = 3
    nodelay = true 
@@ -303,7 +303,7 @@ To start using the solution, you'll need to configure both server and client com
    token = "your_token" 
    connection_pool = 8
    keepalive_period = 75
-   dial_timeout = 60
+   dial_timeout = 10
    dial_limit = 100
    retry_interval = 3  
    nodelay = true 
@@ -350,7 +350,7 @@ To start using the solution, you'll need to configure both server and client com
    token = "your_token" 
    connection_pool = 8
    keepalive_period = 75
-   dial_timeout = 60
+   dial_timeout = 10
    dial_limit = 100
    nodelay = true
    retry_interval = 3
@@ -397,7 +397,7 @@ To start using the solution, you'll need to configure both server and client com
    transport = "wssmux"
    token = "your_token" 
    keepalive_period = 75
-   dial_timeout = 60
+   dial_timeout = 10
    dial_limit = 100
    nodelay = true
    retry_interval = 3

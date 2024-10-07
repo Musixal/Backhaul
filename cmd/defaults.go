@@ -15,7 +15,7 @@ const ( // Default values
 	defaultMuxSession     = 1
 	defaultKeepAlive      = 75
 	deafultHeartbeat      = 40 // 40 seconds
-	defaultDialTimeout    = 60 // 60 seconds
+	defaultDialTimeout    = 10 // 10 seconds
 	// related to smux
 	defaultMuxVersion       = 1
 	defaultMaxFrameSize     = 32768   // 32KB
