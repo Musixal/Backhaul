@@ -267,7 +267,6 @@ func (s *WsTransport) tunnelListener() {
 		s.controlChannel.Close()
 	}
 
-	close(s.tunnelChannel)
 }
 
 func (s *WsTransport) parsePortMappings() {
@@ -370,18 +369,22 @@ func (s *WsTransport) handleLoop() {
 			return
 		case localConn := <-s.localChannel:
 		loop:
-			for tunnelConnection := range s.tunnelChannel {
-				close(tunnelConnection.ping)
-				tunnelConnection.mu.Lock()
-				if err := tunnelConnection.conn.WriteMessage(websocket.TextMessage, []byte(localConn.remoteAddr)); err != nil {
-					s.logger.Debugf("%v", err) // failed to send port number
-					tunnelConnection.conn.Close()
-					continue loop
+			for {
+				select {
+				case <-s.ctx.Done():
+					return
+				case tunnelConnection := <-s.tunnelChannel:
+					close(tunnelConnection.ping)
+					tunnelConnection.mu.Lock()
+					if err := tunnelConnection.conn.WriteMessage(websocket.TextMessage, []byte(localConn.remoteAddr)); err != nil {
+						s.logger.Debugf("%v", err) // failed to send port number
+						tunnelConnection.conn.Close()
+						continue loop
+					}
+					// Handle data exchange between connections
+					go utils.WSConnectionHandler(tunnelConnection.conn, localConn.conn, s.logger, s.usageMonitor, localConn.conn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
+					break loop
 				}
-				// Handle data exchange between connections
-				go utils.WSConnectionHandler(tunnelConnection.conn, localConn.conn, s.logger, s.usageMonitor, localConn.conn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
-				break loop
-
 			}
 		}
 	}

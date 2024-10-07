@@ -81,6 +81,7 @@ func (s *TcpTransport) Start() {
 		go s.parsePortMappings()
 		go s.channelHandler()
 		go s.handleLoop()
+
 	}
 }
 func (s *TcpTransport) Restart() {
@@ -130,6 +131,7 @@ func (s *TcpTransport) channelHandshake() {
 				conn.Close()
 				continue
 			}
+
 			msg, err := utils.ReceiveBinaryString(conn)
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -146,12 +148,14 @@ func (s *TcpTransport) channelHandshake() {
 
 			if msg != s.config.Token {
 				s.logger.Warnf("invalid security token received: %s", msg)
+				conn.Close()
 				continue
 			}
 
 			err = utils.SendBinaryString(conn, s.config.Token)
 			if err != nil {
 				s.logger.Errorf("failed to send security token: %v", err)
+				conn.Close()
 				continue
 			}
 
@@ -237,7 +241,6 @@ func (s *TcpTransport) acceptTunnelConn(listener net.Listener) {
 	for {
 		select {
 		case <-s.ctx.Done():
-			close(s.tunnelChannel)
 			return
 		default:
 			s.logger.Debugf("waiting for accept incoming tunnel connection on %s", listener.Addr().String())
@@ -389,17 +392,24 @@ func (s *TcpTransport) handleLoop() {
 			return
 		case localConn := <-s.localChannel:
 		loop:
-			for tunnelConn := range s.tunnelChannel {
-				// Send the target addr over the connection
-				if err := utils.SendBinaryString(tunnelConn, localConn.remoteAddr); err != nil {
-					s.logger.Errorf("%v", err)
-					tunnelConn.Close()
-					continue loop
-				}
+			for {
+				select {
+				case <-s.ctx.Done():
+					return
 
-				// Handle data exchange between connections
-				go utils.TCPConnectionHandler(localConn.conn, tunnelConn, s.logger, s.usageMonitor, localConn.conn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
-				break loop
+				case tunnelConn := <-s.tunnelChannel:
+					// Send the target addr over the connection
+					if err := utils.SendBinaryString(tunnelConn, localConn.remoteAddr); err != nil {
+						s.logger.Errorf("%v", err)
+						tunnelConn.Close()
+						continue loop
+					}
+
+					// Handle data exchange between connections
+					go utils.TCPConnectionHandler(localConn.conn, tunnelConn, s.logger, s.usageMonitor, localConn.conn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
+					break loop
+
+				}
 			}
 		}
 	}
