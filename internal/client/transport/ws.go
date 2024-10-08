@@ -17,29 +17,29 @@ import (
 )
 
 type WsTransport struct {
-	config            *WsConfig
-	parentctx         context.Context
-	ctx               context.Context
-	cancel            context.CancelFunc
-	logger            *logrus.Logger
-	controlChannel    *websocket.Conn
-	restartMutex      sync.Mutex
-	usageMonitor      *web.Usage
-	activeConnections int32
+	config          *WsConfig
+	parentctx       context.Context
+	ctx             context.Context
+	cancel          context.CancelFunc
+	logger          *logrus.Logger
+	controlChannel  *websocket.Conn
+	restartMutex    sync.Mutex
+	usageMonitor    *web.Usage
+	poolConnections int32
 }
 type WsConfig struct {
-	RemoteAddr     string
-	Token          string
-	SnifferLog     string
-	TunnelStatus   string
-	Nodelay        bool
-	Sniffer        bool
-	KeepAlive      time.Duration
-	RetryInterval  time.Duration
-	DialTimeOut    time.Duration
-	ConnectionPool int
-	WebPort        int
-	Mode           config.TransportType
+	RemoteAddr    string
+	Token         string
+	SnifferLog    string
+	TunnelStatus  string
+	Nodelay       bool
+	Sniffer       bool
+	KeepAlive     time.Duration
+	RetryInterval time.Duration
+	DialTimeOut   time.Duration
+	ConnPoolSize  int
+	WebPort       int
+	Mode          config.TransportType
 }
 
 func NewWSClient(parentCtx context.Context, config *WsConfig, logger *logrus.Logger) *WsTransport {
@@ -48,14 +48,14 @@ func NewWSClient(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 
 	// Initialize the TcpTransport struct
 	client := &WsTransport{
-		config:            config,
-		parentctx:         parentCtx,
-		ctx:               ctx,
-		cancel:            cancel,
-		logger:            logger,
-		controlChannel:    nil, // will be set when a control connection is established
-		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
-		activeConnections: 0,
+		config:          config,
+		parentctx:       parentCtx,
+		ctx:             ctx,
+		cancel:          cancel,
+		logger:          logger,
+		controlChannel:  nil, // will be set when a control connection is established
+		usageMonitor:    web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
+		poolConnections: 0,
 	}
 
 	return client
@@ -94,7 +94,7 @@ func (c *WsTransport) Restart() {
 	c.controlChannel = nil
 	c.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.config.Sniffer, &c.config.TunnelStatus, c.logger)
 	c.config.TunnelStatus = ""
-	c.activeConnections = 0
+	c.poolConnections = 0
 
 	go c.Start()
 
@@ -128,8 +128,12 @@ func (c *WsTransport) channelDialer() {
 }
 
 func (c *WsTransport) poolMaintainer() {
-	ticker := time.NewTicker(time.Millisecond * 350)
+	ticker := time.NewTicker(time.Millisecond * 500) // Reduce the frequency to to reduce CPU usage
 	defer ticker.Stop()
+
+	go c.tunnelDialer(true)              // Initial dialer to avoid pool size increase at first run
+	newPoolSize := c.config.ConnPoolSize // intial value
+	decDeadline := 0  // for decreasing newPoolSize slowly
 
 	for {
 		select {
@@ -137,12 +141,29 @@ func (c *WsTransport) poolMaintainer() {
 			return
 
 		case <-ticker.C:
-			activeConnections := int(c.activeConnections)
-			c.logger.Tracef("active connections: %d", c.activeConnections)
-			if activeConnections < c.config.ConnectionPool/2 {
-				neededConn := c.config.ConnectionPool - activeConnections
+			poolConnections := int(atomic.LoadInt32(&c.poolConnections))
+
+			// Dynamically adjust the pool size based on current connections
+			if poolConnections == 0 {
+				c.logger.Info("dynamically increasing pool connection size to ", newPoolSize+1)
+				newPoolSize++
+
+			} else if poolConnections >= newPoolSize && newPoolSize > c.config.ConnPoolSize {
+				if decDeadline == 5 {
+					c.logger.Info("dynamically decreasing pool connection size to ", newPoolSize-1)
+					newPoolSize--
+					decDeadline = 0
+				} else {
+					decDeadline++
+				}
+			}
+
+			c.logger.Tracef("active pool connections: %d", c.poolConnections)
+
+			if poolConnections <= newPoolSize {
+				neededConn := newPoolSize - poolConnections
 				for i := 0; i < neededConn; i++ {
-					go c.tunnelDialer()
+					go c.tunnelDialer(true)
 				}
 
 			}
@@ -178,7 +199,7 @@ func (c *WsTransport) channelHandler() {
 			switch msg {
 			case utils.SG_Chan:
 				c.logger.Debug("channel signal received, initiating tunnel dialer")
-				go c.tunnelDialer()
+				go c.tunnelDialer(false)
 			case utils.SG_Closed:
 				c.logger.Info("control channel has been closed by the server")
 				go c.Restart()
@@ -199,19 +220,21 @@ func (c *WsTransport) channelHandler() {
 	}
 }
 
-func (c *WsTransport) tunnelDialer() {
-	// Increment active connections counter
-	atomic.AddInt32(&c.activeConnections, 1)
-
+func (c *WsTransport) tunnelDialer(pool bool) {
+	if pool {
+		// Increment active connections counter
+		atomic.AddInt32(&c.poolConnections, 1)
+	}
 	c.logger.Debugf("initiating new websocket tunnel connection to address %s", c.config.RemoteAddr)
 
 	// Dial to the tunnel server
 	tunnelConn, err := WebSocketDialer(c.config.RemoteAddr, "/tunnel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode)
 	if err != nil {
 		c.logger.Errorf("failed to dial webSocket tunnel server: %v", err)
-
-		// Decrement active connections on failure
-		atomic.AddInt32(&c.activeConnections, -1)
+		if pool {
+			// Decrement active connections on failure
+			atomic.AddInt32(&c.poolConnections, -1)
+		}
 		return
 	}
 
@@ -224,9 +247,10 @@ func (c *WsTransport) tunnelDialer() {
 			if err != nil {
 				c.logger.Debugf("unable to get port from websocket connection %s: %v", tunnelConn.RemoteAddr().String(), err)
 				tunnelConn.Close()
-
-				// Decrement active connections on failure
-				atomic.AddInt32(&c.activeConnections, -1)
+				if pool {
+					// Decrement active connections on failure
+					atomic.AddInt32(&c.poolConnections, -1)
+				}
 				return
 			}
 
@@ -234,9 +258,10 @@ func (c *WsTransport) tunnelDialer() {
 				c.logger.Trace("ping received from the server")
 				continue
 			}
-
-			// Decrement active connections
-			atomic.AddInt32(&c.activeConnections, -1)
+			if pool {
+				// Decrement active connections
+				atomic.AddInt32(&c.poolConnections, -1)
+			}
 
 			remoteAddr := string(remoteAddrBytes)
 

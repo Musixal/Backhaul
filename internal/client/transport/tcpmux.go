@@ -16,16 +16,16 @@ import (
 )
 
 type TcpMuxTransport struct {
-	config            *TcpMuxConfig
-	smuxConfig        *smux.Config
-	parentctx         context.Context
-	ctx               context.Context
-	cancel            context.CancelFunc
-	logger            *logrus.Logger
-	controlChannel    net.Conn
-	usageMonitor      *web.Usage
-	restartMutex      sync.Mutex
-	activeConnections int32
+	config          *TcpMuxConfig
+	smuxConfig      *smux.Config
+	parentctx       context.Context
+	ctx             context.Context
+	cancel          context.CancelFunc
+	logger          *logrus.Logger
+	controlChannel  net.Conn
+	usageMonitor    *web.Usage
+	restartMutex    sync.Mutex
+	poolConnections int32
 }
 
 type TcpMuxConfig struct {
@@ -42,7 +42,7 @@ type TcpMuxConfig struct {
 	MaxFrameSize     int
 	MaxReceiveBuffer int
 	MaxStreamBuffer  int
-	ConnectionPool   int
+	ConnPoolSize     int
 	WebPort          int
 }
 
@@ -60,14 +60,14 @@ func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logru
 			MaxReceiveBuffer:  config.MaxReceiveBuffer,
 			MaxStreamBuffer:   config.MaxStreamBuffer,
 		},
-		config:            config,
-		parentctx:         parentCtx,
-		ctx:               ctx,
-		cancel:            cancel,
-		logger:            logger,
-		controlChannel:    nil, // will be set when a control connection is established
-		activeConnections: 0,
-		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
+		config:          config,
+		parentctx:       parentCtx,
+		ctx:             ctx,
+		cancel:          cancel,
+		logger:          logger,
+		controlChannel:  nil, // will be set when a control connection is established
+		poolConnections: 0,
+		usageMonitor:    web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
 	return client
@@ -105,7 +105,7 @@ func (c *TcpMuxTransport) Restart() {
 	c.controlChannel = nil
 	c.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.config.Sniffer, &c.config.TunnelStatus, c.logger)
 	c.config.TunnelStatus = ""
-	c.activeConnections = 0
+	c.poolConnections = 0
 
 	go c.Start()
 
@@ -176,8 +176,12 @@ func (c *TcpMuxTransport) channelDialer() {
 }
 
 func (c *TcpMuxTransport) poolMaintainer() {
-	ticker := time.NewTicker(time.Millisecond * 350)
+	ticker := time.NewTicker(time.Millisecond * 500) // Reduce the frequency to to reduce CPU usage
 	defer ticker.Stop()
+
+	go c.tunnelDialer(true)              // Initial dialer to avoid pool size increase at first run
+	newPoolSize := c.config.ConnPoolSize // intial value
+	decDeadline := 0  // for decreasing newPoolSize slowly
 
 	for {
 		select {
@@ -185,12 +189,29 @@ func (c *TcpMuxTransport) poolMaintainer() {
 			return
 
 		case <-ticker.C:
-			activeConnections := int(c.activeConnections)
-			c.logger.Tracef("active connections: %d", c.activeConnections)
-			if activeConnections < c.config.ConnectionPool/2 {
-				neededConn := c.config.ConnectionPool - activeConnections
+			poolConnections := int(atomic.LoadInt32(&c.poolConnections))
+
+			// Dynamically adjust the pool size based on current connections
+			if poolConnections == 0 {
+				c.logger.Info("dynamically increasing pool connection size to ", newPoolSize+1)
+				newPoolSize++
+
+			} else if poolConnections >= newPoolSize && newPoolSize > c.config.ConnPoolSize {
+				if decDeadline == 5 {
+					c.logger.Info("dynamically decreasing pool connection size to ", newPoolSize-1)
+					newPoolSize--
+					decDeadline = 0
+				} else {
+					decDeadline++
+				}
+			}
+
+			c.logger.Tracef("active pool connections: %d", c.poolConnections)
+
+			if poolConnections <= newPoolSize {
+				neededConn := newPoolSize - poolConnections
 				for i := 0; i < neededConn; i++ {
-					go c.tunnelDialer()
+					go c.tunnelDialer(true)
 				}
 
 			}
@@ -227,7 +248,7 @@ func (c *TcpMuxTransport) channelHandler() {
 			switch msg {
 			case utils.SG_Chan:
 				c.logger.Debug("channel signal received, initiating tunnel dialer")
-				go c.tunnelDialer()
+				go c.tunnelDialer(false)
 
 			case utils.SG_Closed:
 				c.logger.Info("control channel has been closed by the server")
@@ -249,29 +270,32 @@ func (c *TcpMuxTransport) channelHandler() {
 	}
 }
 
-func (c *TcpMuxTransport) tunnelDialer() {
-	// Increment active connections counter
-	atomic.AddInt32(&c.activeConnections, 1)
-
+func (c *TcpMuxTransport) tunnelDialer(pool bool) {
+	if pool {
+		// Increment active connections counter
+		atomic.AddInt32(&c.poolConnections, 1)
+	}
 	c.logger.Debugf("initiating new tunnel connection to address %s", c.config.RemoteAddr)
 
 	// Dial to the tunnel server
 	tunnelConn, err := TcpDialer(c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay)
 	if err != nil {
 		c.logger.Errorf("failed to dial tunnel server: %v", err)
-
-		// Decrement active connections on failure
-		atomic.AddInt32(&c.activeConnections, -1)
+		if pool {
+			// Decrement active connections on failure
+			atomic.AddInt32(&c.poolConnections, -1)
+		}
 		return
 	}
-	c.handleSession(tunnelConn)
+	c.handleSession(tunnelConn, pool)
 }
 
-func (c *TcpMuxTransport) handleSession(tunnelConn net.Conn) {
-	defer func() {
-		atomic.AddInt32(&c.activeConnections, -1)
-	}()
-
+func (c *TcpMuxTransport) handleSession(tunnelConn net.Conn, pool bool) {
+	if pool {
+		defer func() {
+			atomic.AddInt32(&c.poolConnections, -1)
+		}()
+	}
 	// SMUX server
 	session, err := smux.Server(tunnelConn, c.smuxConfig)
 	if err != nil {
