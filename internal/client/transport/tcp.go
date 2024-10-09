@@ -24,6 +24,8 @@ type TcpTransport struct {
 	usageMonitor    *web.Usage
 	restartMutex    sync.Mutex
 	poolConnections int32
+	loadConnections int32
+	controlFlow     chan struct{}
 }
 type TcpConfig struct {
 	RemoteAddr    string
@@ -53,6 +55,8 @@ func NewTCPClient(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		controlChannel:  nil, // will be set when a control connection is established
 		usageMonitor:    web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 		poolConnections: 0,
+		loadConnections: 0,
+		controlFlow:     make(chan struct{}),
 	}
 
 	return client
@@ -90,6 +94,8 @@ func (c *TcpTransport) Restart() {
 	c.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.config.Sniffer, &c.config.TunnelStatus, c.logger)
 	c.config.TunnelStatus = ""
 	c.poolConnections = 0
+	c.loadConnections = 0
+	c.controlFlow = make(chan struct{})
 
 	go c.Start()
 
@@ -145,8 +151,8 @@ func (c *TcpTransport) channelDialer() {
 				c.logger.Info("control channel established successfully")
 
 				c.config.TunnelStatus = "Connected (TCP)"
-				go c.channelHandler()
 				go c.poolMaintainer()
+				go c.channelHandler()
 
 				return
 
@@ -159,49 +165,57 @@ func (c *TcpTransport) channelDialer() {
 		}
 	}
 }
-func (c *TcpTransport) poolMaintainer() {
-	ticker := time.NewTicker(time.Millisecond * 500) // Reduce the frequency to to reduce CPU usage
-	defer ticker.Stop()
 
-	go c.tunnelDialer(true)              // Initial dialer to avoid pool size increase at first run
+func (c *TcpTransport) poolMaintainer() {
+	for i := 0; i < c.config.ConnPoolSize; i++ { //initial pool filling
+		go c.tunnelDialer()
+	}
+
+	tickerPool := time.NewTicker(time.Second * 1)
+	defer tickerPool.Stop()
+
+	tickerLoad := time.NewTicker(time.Second * 60)
+	defer tickerLoad.Stop()
+
 	newPoolSize := c.config.ConnPoolSize // intial value
-	decDeadline := 0  // for decreasing newPoolSize slowly
+	var poolConnectionsSum int32 = 0
 
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
 
-		case <-ticker.C:
-			poolConnections := int(atomic.LoadInt32(&c.poolConnections))
+		case <-tickerPool.C:
+			// Accumulate pool connections over time (every second)
+			atomic.AddInt32(&poolConnectionsSum, atomic.LoadInt32(&c.poolConnections))
+
+		case <-tickerLoad.C:
+			// Calculate the loadConnections over the last 30 seconds
+			loadConnections := (int(atomic.LoadInt32(&c.loadConnections)) + 59) / 60 // Every 1 second, +59 for ceil-like logic
+			atomic.StoreInt32(&c.loadConnections, 0)                                 // Reset
+
+			// Calculate the average pool connections over the last 10 seconds
+			poolConnectionsAvg := (int(atomic.LoadInt32(&poolConnectionsSum)) + 59) / 60 // Average connections in 1 second, +59 for ceil-like logic
+			atomic.StoreInt32(&poolConnectionsSum, 0)                                    // Reset
+
+			// Log the pool connections and load stats
+			c.logger.Debugf("avg pool connections: %d, avg load connections: %d", poolConnectionsAvg, loadConnections)
 
 			// Dynamically adjust the pool size based on current connections
-			if poolConnections == 0 {
-				c.logger.Info("dynamically increasing pool connection size to ", newPoolSize+1)
+			if (loadConnections+4)/5 > poolConnectionsAvg { // caclulate in 200ms
+				c.logger.Infof("increasing pool size: %d -> %d", newPoolSize, newPoolSize+1)
 				newPoolSize++
 
-			} else if poolConnections >= newPoolSize && newPoolSize > c.config.ConnPoolSize {
-				if decDeadline == 5 {
-					c.logger.Info("dynamically decreasing pool connection size to ", newPoolSize-1)
-					newPoolSize--
-					decDeadline = 0
-				} else {
-					decDeadline++
-				}
+				// Add a new connection to the pool
+				go c.tunnelDialer()
+			} else if (loadConnections+3)/4 < poolConnectionsAvg && newPoolSize > c.config.ConnPoolSize { // tolerance for decreasing pool is 20%
+				c.logger.Infof("decreasing pool size: %d -> %d", newPoolSize, newPoolSize-1)
+				newPoolSize--
+
+				// send a signal to controlFlow
+				c.controlFlow <- struct{}{}
 			}
-
-			c.logger.Tracef("active pool connections: %d", c.poolConnections)
-
-			if poolConnections <= newPoolSize {
-				neededConn := newPoolSize - poolConnections
-				for i := 0; i < neededConn; i++ {
-					go c.tunnelDialer(true)
-				}
-
-			}
-
 		}
-
 	}
 
 }
@@ -231,8 +245,14 @@ func (c *TcpTransport) channelHandler() {
 		case msg := <-msgChan:
 			switch msg {
 			case utils.SG_Chan:
-				c.logger.Debug("channel signal received, initiating tunnel dialer")
-				go c.tunnelDialer(false)
+				atomic.AddInt32(&c.loadConnections, 1)
+				select {
+				case <-c.controlFlow: // Do nothing
+
+				default:
+					c.logger.Debug("channel signal received, initiating tunnel dialer")
+					go c.tunnelDialer()
+				}
 			case utils.SG_HB:
 				c.logger.Debug("heartbeat signal received successfully")
 			case utils.SG_Closed:
@@ -254,30 +274,26 @@ func (c *TcpTransport) channelHandler() {
 }
 
 // Dialing to the tunnel server, chained functions, without retry
-func (c *TcpTransport) tunnelDialer(pool bool) {
-	if pool {
-		// Increment active connections counter
-		atomic.AddInt32(&c.poolConnections, 1)
-	}
+func (c *TcpTransport) tunnelDialer() {
 	c.logger.Debugf("initiating new connection to tunnel server at %s", c.config.RemoteAddr)
 
 	// Dial to the tunnel server
 	tcpConn, err := TcpDialer(c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay)
 	if err != nil {
 		c.logger.Error("failed to dial tunnel server: ", err)
-		if pool {
-			// Decrement active connections on failure
-			atomic.AddInt32(&c.poolConnections, -1)
-		}
+
 		return
 	}
 
+	// Increment active connections counter
+	atomic.AddInt32(&c.poolConnections, 1)
+
 	// Attempt to receive the remote address from the tunnel server
 	remoteAddr, err := utils.ReceiveBinaryString(tcpConn)
-	if pool {
-		// Decrement active connections after successful or failed connectio
-		atomic.AddInt32(&c.poolConnections, -1)
-	}
+
+	// Decrement active connections after successful or failed connection
+	atomic.AddInt32(&c.poolConnections, -1)
+
 	if err != nil {
 		c.logger.Debugf("failed to receive port from tunnel connection %s: %v", tcpConn.RemoteAddr().String(), err)
 		tcpConn.Close()
