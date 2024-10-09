@@ -71,10 +71,11 @@ func NewDataStore(listenAddr string, shutdownCtx context.Context, snifferLog str
 
 func (m *Usage) Monitor() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", m.handleIndex)    // handle index
-	mux.HandleFunc("/data", m.handleData) // New route for JSON data
+	mux.HandleFunc("/", m.handleIndex) // handle index
 	mux.HandleFunc("/stats", m.statsHandler)
-
+	if m.sniffer {
+		mux.HandleFunc("/data", m.handleData) // New route for JSON data
+	}
 	m.server = &http.Server{
 		Addr:    m.listenAddr,
 		Handler: mux,
