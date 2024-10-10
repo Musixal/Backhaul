@@ -198,12 +198,9 @@ func (c *TcpTransport) poolMaintainer() {
 			poolConnectionsAvg := (int(atomic.LoadInt32(&poolConnectionsSum)) + 59) / 60 // Average connections in 1 second, +59 for ceil-like logic
 			atomic.StoreInt32(&poolConnectionsSum, 0)                                    // Reset
 
-			// Log the pool connections and load stats
-			c.logger.Debugf("avg pool connections: %d, avg load connections: %d", poolConnectionsAvg, loadConnections)
-
 			// Dynamically adjust the pool size based on current connections
 			if (loadConnections+4)/5 > poolConnectionsAvg { // caclulate in 200ms
-				c.logger.Infof("increasing pool size: %d -> %d", newPoolSize, newPoolSize+1)
+				c.logger.Infof("increasing pool size: %d -> %d, avg pool conn: %d, avg load conn: %d", newPoolSize, newPoolSize+1, poolConnectionsAvg, loadConnections)
 				newPoolSize++
 
 				// Add a new connection to the pool
@@ -227,12 +224,17 @@ func (c *TcpTransport) channelHandler() {
 	// Goroutine to handle the blocking ReceiveBinaryString
 	go func() {
 		for {
-			msg, err := utils.ReceiveBinaryByte(c.controlChannel)
-			if err != nil {
-				errChan <- err
+			select {
+			case <-c.ctx.Done():
 				return
+			default:
+				msg, err := utils.ReceiveBinaryByte(c.controlChannel)
+				if err != nil {
+					errChan <- err
+					return
+				}
+				msgChan <- msg
 			}
-			msgChan <- msg
 		}
 	}()
 
@@ -266,7 +268,7 @@ func (c *TcpTransport) channelHandler() {
 			}
 		case err := <-errChan:
 			// Handle errors from the control channel
-			c.logger.Error("error receiving channel signal, restarting client: ", err)
+			c.logger.Error("failed to read channel signal, restarting client: ", err)
 			go c.Restart()
 			return
 		}
