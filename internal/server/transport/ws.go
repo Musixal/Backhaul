@@ -343,15 +343,16 @@ func (s *WsTransport) acceptLocalConn(listener net.Listener, remoteAddr string) 
 			}
 
 			select {
-			case s.reqNewConnChan <- struct{}{}:
-				// Successfully requested a new connection
-			default:
-				// The channel is full, do nothing
-				s.logger.Warn("channel is full, cannot request a new connection")
-			}
-
-			select {
 			case s.localChannel <- LocalTCPConn{conn: conn, remoteAddr: remoteAddr}:
+
+				select {
+				case s.reqNewConnChan <- struct{}{}:
+					// Successfully requested a new connection
+				default:
+					// The channel is full, do nothing
+					s.logger.Warn("channel is full, cannot request a new connection")
+				}
+
 				s.logger.Debugf("accepted incoming TCP connection from %s", tcpConn.RemoteAddr().String())
 
 			default: // channel is full, discard the connection

@@ -132,7 +132,7 @@ func (c *QuicTransport) ChannelDialer(coldStart bool) {
 				qConn.CloseWithError(1, "failed to open stream")
 				continue
 			}
-			err = utils.SendBinaryString(stream, c.config.Token)
+			err = utils.SendBinaryString(stream, c.config.Token, utils.SG_TCP)
 			if err != nil {
 				c.logger.Errorf("failed to send security token: %v", err)
 				stream.Close()
@@ -148,7 +148,7 @@ func (c *QuicTransport) ChannelDialer(coldStart bool) {
 				continue
 			}
 			// Receive response
-			message, err := utils.ReceiveBinaryString(stream)
+			message, _, err := utils.ReceiveBinaryString(stream)
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					c.logger.Warn("timeout while waiting for control channel response")
@@ -321,7 +321,7 @@ func (c *QuicTransport) handleTunnelConn(session quic.Connection) {
 				return
 			}
 
-			remoteAddr, err := utils.ReceiveBinaryString(stream)
+			remoteAddr, _, err := utils.ReceiveBinaryString(stream)
 			if err != nil {
 				c.logger.Errorf("unable to get port from stream connection %s: %v", session.RemoteAddr().String(), err)
 				if err := session.CloseWithError(1, "recieve port error"); err != nil {

@@ -412,7 +412,7 @@ func (s *WsMuxTransport) handleSession(session *smux.Session, next chan struct{}
 			time.Sleep(1 * time.Millisecond)
 
 			// Send the target port over the tunnel connection
-			if err := utils.SendBinaryString(stream, incomingConn.remoteAddr); err != nil {
+			if err := utils.SendBinaryString(stream, incomingConn.remoteAddr, utils.SG_TCP); err != nil {
 				s.handleSessionError(session, &incomingConn, next, done, counter, err)
 				return
 			}

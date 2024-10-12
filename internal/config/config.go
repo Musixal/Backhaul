@@ -36,6 +36,7 @@ type ServerConfig struct {
 	TLSKeyFile       string        `toml:"tls_key"`
 	Heartbeat        int           `toml:"heartbeat"`
 	MuxCon           int           `toml:"mux_con"`
+	AcceptUDP        bool          `toml:"accept_udp"`
 }
 
 // ClientConfig represents the configuration for the client.

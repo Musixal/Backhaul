@@ -117,7 +117,7 @@ func (c *TcpTransport) channelDialer() {
 			}
 
 			// Sending security token
-			err = utils.SendBinaryString(tunnelTCPConn, c.config.Token)
+			err = utils.SendBinaryString(tunnelTCPConn, c.config.Token, utils.SG_Chan)
 			if err != nil {
 				c.logger.Errorf("failed to send security token: %v", err)
 				tunnelTCPConn.Close()
@@ -132,7 +132,7 @@ func (c *TcpTransport) channelDialer() {
 			}
 
 			// Receive response
-			message, err := utils.ReceiveBinaryString(tunnelTCPConn)
+			message, _, err := utils.ReceiveBinaryString(tunnelTCPConn)
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					c.logger.Warn("timeout while waiting for control channel response")
@@ -291,7 +291,7 @@ func (c *TcpTransport) tunnelDialer() {
 	atomic.AddInt32(&c.poolConnections, 1)
 
 	// Attempt to receive the remote address from the tunnel server
-	remoteAddr, err := utils.ReceiveBinaryString(tcpConn)
+	remoteAddr, transport, err := utils.ReceiveBinaryString(tcpConn)
 
 	// Decrement active connections after successful or failed connection
 	atomic.AddInt32(&c.poolConnections, -1)
@@ -310,8 +310,25 @@ func (c *TcpTransport) tunnelDialer() {
 		return
 	}
 
-	// Dial local server using the received address
-	c.localDialer(tcpConn, resolvedAddr, port)
+	if transport == utils.SG_TCP {
+		// Dial local server using the received address
+		c.localDialer(tcpConn, resolvedAddr, port)
+
+	} else if transport == utils.SG_UDP {
+		UDPDialer(tcpConn, resolvedAddr, c.logger, c.usageMonitor, port, c.config.Sniffer)
+
+	} else if transport == utils.SG_Chan {
+		c.logger.Error("channel signal recieved. restarting the client")
+		tcpConn.Close()
+		go c.Restart()
+		return
+		
+	} else {
+		c.logger.Error("undefined transort. close the connection, restarting the client")
+		tcpConn.Close()
+		go c.Restart()
+		return
+	}
 
 }
 

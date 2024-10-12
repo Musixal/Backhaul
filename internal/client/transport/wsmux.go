@@ -298,7 +298,7 @@ func (c *WsMuxTransport) handleSession(tunnelConn *websocket.Conn) {
 				return
 			}
 
-			remoteAddr, err := utils.ReceiveBinaryString(stream)
+			remoteAddr, _, err := utils.ReceiveBinaryString(stream)
 			if err != nil {
 				c.logger.Errorf("unable to get port from stream connection %s: %v", tunnelConn.RemoteAddr().String(), err)
 				if err := session.Close(); err != nil {

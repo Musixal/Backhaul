@@ -148,8 +148,12 @@ func (s *TcpMuxTransport) channelHandshake() {
 				conn.Close()
 				continue
 			}
-			msg, err := utils.ReceiveBinaryString(conn)
-			if err != nil {
+			msg, transport, err := utils.ReceiveBinaryString(conn)
+			if transport != utils.SG_Chan {
+				s.logger.Errorf("invalid signal for channel, discard the connection")
+				conn.Close()
+				continue
+			} else if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					s.logger.Warn("timeout while waiting for control channel signal")
 				} else {
@@ -168,7 +172,7 @@ func (s *TcpMuxTransport) channelHandshake() {
 				continue
 			}
 
-			err = utils.SendBinaryString(conn, s.config.Token)
+			err = utils.SendBinaryString(conn, s.config.Token, utils.SG_TCP)
 			if err != nil {
 				s.logger.Errorf("failed to send security token: %v", err)
 				conn.Close()
@@ -449,7 +453,7 @@ func (s *TcpMuxTransport) handleSession(session *smux.Session, next chan struct{
 			}
 
 			// Send the target port over the tunnel connection
-			if err := utils.SendBinaryString(stream, incomingConn.remoteAddr); err != nil {
+			if err := utils.SendBinaryString(stream, incomingConn.remoteAddr, utils.SG_TCP); err != nil {
 				s.handleSessionError(session, &incomingConn, next, done, counter, err)
 				return
 			}

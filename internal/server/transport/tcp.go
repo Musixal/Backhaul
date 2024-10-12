@@ -41,6 +41,7 @@ type TcpConfig struct {
 	Heartbeat    time.Duration // in seconds
 	ChannelSize  int
 	WebPort      int
+	AcceptUDP    bool
 }
 
 func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.Logger) *TcpTransport {
@@ -132,8 +133,12 @@ func (s *TcpTransport) channelHandshake() {
 				continue
 			}
 
-			msg, err := utils.ReceiveBinaryString(conn)
-			if err != nil {
+			msg, transport, err := utils.ReceiveBinaryString(conn)
+			if transport != utils.SG_Chan {
+				s.logger.Errorf("invalid signal for channel, discard the connection")
+				conn.Close()
+				continue
+			} else if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					s.logger.Warn("timeout while waiting for control channel signal")
 				} else {
@@ -152,7 +157,7 @@ func (s *TcpTransport) channelHandshake() {
 				continue
 			}
 
-			err = utils.SendBinaryString(conn, s.config.Token)
+			err = utils.SendBinaryString(conn, s.config.Token, utils.SG_TCP)
 			if err != nil {
 				s.logger.Errorf("failed to send security token: %v", err)
 				conn.Close()
@@ -315,6 +320,10 @@ func (s *TcpTransport) parsePortMappings() {
 		remoteAddr := strings.TrimSpace(parts[1])
 
 		go s.localListener(localAddr, remoteAddr)
+
+		if s.config.AcceptUDP {
+			go s.udpListener(localAddr, remoteAddr)
+		}
 	}
 }
 
@@ -366,15 +375,16 @@ func (s *TcpTransport) acceptLocalConn(listener net.Listener, remoteAddr string)
 			}
 
 			select {
-			case s.reqNewConnChan <- struct{}{}:
-				// Successfully requested a new connection
-			default:
-				// The channel is full, do nothing
-				s.logger.Warn("channel is full, cannot request a new connection")
-			}
-
-			select {
 			case s.localChannel <- LocalTCPConn{conn: conn, remoteAddr: remoteAddr}:
+
+				select {
+				case s.reqNewConnChan <- struct{}{}:
+					// Successfully requested a new connection
+				default:
+					// The channel is full, do nothing
+					s.logger.Warn("channel is full, cannot request a new connection")
+				}
+
 				s.logger.Debugf("accepted incoming TCP connection from %s", tcpConn.RemoteAddr().String())
 
 			default: // channel is full, discard the connection
@@ -399,7 +409,7 @@ func (s *TcpTransport) handleLoop() {
 
 				case tunnelConn := <-s.tunnelChannel:
 					// Send the target addr over the connection
-					if err := utils.SendBinaryString(tunnelConn, localConn.remoteAddr); err != nil {
+					if err := utils.SendBinaryString(tunnelConn, localConn.remoteAddr, utils.SG_TCP); err != nil {
 						s.logger.Errorf("%v", err)
 						tunnelConn.Close()
 						continue loop

@@ -51,6 +51,7 @@ func (s *Server) Start() {
 			Sniffer:     s.config.Sniffer,
 			WebPort:     s.config.WebPort,
 			SnifferLog:  s.config.SnifferLog,
+			AcceptUDP:   s.config.AcceptUDP,
 		}
 
 		tcpServer := transport.NewTCPServer(s.ctx, tcpConfig, s.logger)
