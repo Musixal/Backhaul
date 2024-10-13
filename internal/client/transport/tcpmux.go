@@ -95,8 +95,14 @@ func (c *TcpMuxTransport) Restart() {
 	defer c.restartMutex.Unlock()
 
 	c.logger.Info("restarting client...")
+
 	if c.cancel != nil {
 		c.cancel()
+	}
+
+	// close control channel connection
+	if c.controlChannel != nil {
+		c.controlChannel.Close()
 	}
 
 	time.Sleep(2 * time.Second)
@@ -182,8 +188,6 @@ func (c *TcpMuxTransport) channelDialer() {
 
 }
 
-
-
 func (c *TcpMuxTransport) poolMaintainer() {
 	for i := 0; i < c.config.ConnPoolSize; i++ { //initial pool filling
 		go c.tunnelDialer()
@@ -237,7 +241,6 @@ func (c *TcpMuxTransport) poolMaintainer() {
 
 func (c *TcpMuxTransport) channelHandler() {
 	msgChan := make(chan byte, 1000)
-	errChan := make(chan error, 1000)
 
 	// Goroutine to handle the blocking ReceiveBinaryString
 	go func() {
@@ -248,7 +251,8 @@ func (c *TcpMuxTransport) channelHandler() {
 			default:
 				msg, err := utils.ReceiveBinaryByte(c.controlChannel)
 				if err != nil {
-					errChan <- err
+					c.logger.Error("failed to read from control channel. ", err)
+					go c.Restart()
 					return
 				}
 				msgChan <- msg
@@ -262,10 +266,12 @@ func (c *TcpMuxTransport) channelHandler() {
 		case <-c.ctx.Done():
 			_ = utils.SendBinaryByte(c.controlChannel, utils.SG_Closed)
 			return
+
 		case msg := <-msgChan:
 			switch msg {
 			case utils.SG_Chan:
 				atomic.AddInt32(&c.loadConnections, 1)
+
 				select {
 				case <-c.controlFlow: // Do nothing
 
@@ -274,22 +280,20 @@ func (c *TcpMuxTransport) channelHandler() {
 					go c.tunnelDialer()
 				}
 
-			case utils.SG_Closed:
-				c.logger.Info("control channel has been closed by the server")
-				go c.Restart()
-				return
 			case utils.SG_HB:
 				c.logger.Debug("heartbeat signal received successfully")
+
+			case utils.SG_Closed:
+				c.logger.Warn("control channel has been closed by the server")
+				go c.Restart()
+				return
+
 			default:
-				c.logger.Errorf("unexpected response from channel: %v. Restarting client...", msg)
+				c.logger.Errorf("unexpected response from channel: %v.", msg)
 				go c.Restart()
 				return
 			}
-		case err := <-errChan:
-			// Handle errors from the control channel
-			c.logger.Error("failed to read channel signal, restarting client: ", err)
-			go c.Restart()
-			return
+
 		}
 	}
 }

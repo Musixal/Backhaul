@@ -189,10 +189,7 @@ func (s *TcpTransport) channelHandler() {
 	defer ticker.Stop()
 
 	// Channel to receive the message or error
-	resultChan := make(chan struct {
-		message byte
-		err     error
-	})
+	messageChan := make(chan byte, 1)
 
 	go func() {
 		for {
@@ -201,10 +198,13 @@ func (s *TcpTransport) channelHandler() {
 				return
 			default:
 				message, err := utils.ReceiveBinaryByte(s.controlChannel)
-				resultChan <- struct {
-					message byte
-					err     error
-				}{message, err}
+				if err != nil {
+					s.logger.Error("failed to read from channel connection. ", err)
+					close(messageChan) // Closing the channel to signal completion
+					go s.Restart()
+					return
+				}
+				messageChan <- message
 			}
 		}
 	}()
@@ -227,7 +227,7 @@ func (s *TcpTransport) channelHandler() {
 		case <-s.reqNewConnChan:
 			err := utils.SendBinaryByte(s.controlChannel, utils.SG_Chan)
 			if err != nil {
-				s.logger.Error("error sending channel signal, attempting to restart server...")
+				s.logger.Error("failed to send request new connection signal. ", err)
 				go s.Restart()
 				return
 			}
@@ -235,22 +235,24 @@ func (s *TcpTransport) channelHandler() {
 		case <-ticker.C:
 			err := utils.SendBinaryByte(s.controlChannel, utils.SG_HB)
 			if err != nil {
-				s.logger.Error("failed to send heartbeat signal, attempting to restart server...")
+				s.logger.Error("failed to send heartbeat signal")
 				go s.Restart()
 				return
 			}
 			s.logger.Trace("heartbeat signal sent successfully")
 
-		case result := <-resultChan:
-			if result.err != nil {
-				s.logger.Errorf("failed to receive message from channel connection: %v", result.err)
+		case message, ok := <-messageChan:
+			if !ok {
+				s.logger.Error("channel closed, likely due to an error in TCP read")
+				return
+			}
+
+			if message == utils.SG_Closed {
+				s.logger.Warn("control channel has been closed by the client")
 				go s.Restart()
 				return
-			} else if result.message == utils.SG_Closed {
-				s.logger.Fatal("control channel has been closed by the client")
-				go s.Restart()
-				return
-			} else if result.message == utils.SG_RTT {
+
+			} else if message == utils.SG_RTT {
 				measureRTT := time.Since(rtt)
 				s.rtt = measureRTT.Milliseconds()
 				s.logger.Infof("Round Trip Time (RTT): %d ms", s.rtt)
