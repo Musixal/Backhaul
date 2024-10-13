@@ -78,7 +78,7 @@ func (s *TcpTransport) udpListener(localAddr string, remoteAddr string) {
 							// seconds (or until the payload channel becomes idle). The timer will close the TCP connection once it
 							// times out. Further testing is needed to confirm this strategy's effect on overall performance and congestion handling.
 						}
-						
+
 						delete(activeConnections, key)
 
 					} else {
@@ -147,7 +147,7 @@ func (s *TcpTransport) handleUDPLoop(udpChan chan *LocalUDPConn) {
 
 				case tunnelConn := <-s.tunnelChannel:
 					// Send the target addr over the connection
-					if err := utils.SendBinaryString(tunnelConn, localConn.remoteAddr, utils.SG_UDP); err != nil {
+					if err := utils.SendBinaryTransportString(tunnelConn, localConn.remoteAddr, utils.SG_UDP); err != nil {
 						s.logger.Errorf("%v", err)
 						tunnelConn.Close()
 						continue loop
