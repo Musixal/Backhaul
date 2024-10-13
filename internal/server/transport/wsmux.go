@@ -112,7 +112,7 @@ func (s *WsMuxTransport) Restart() {
 		s.cancel()
 	}
 
-	// Close tunnel channel connection
+	// Close control channel connection
 	if s.controlChannel != nil {
 		s.controlChannel.Close()
 	}
@@ -140,16 +140,27 @@ func (s *WsMuxTransport) channelHandler() {
 	defer ticker.Stop()
 
 	// Channel to receive the message or error
-	resultChan := make(chan struct {
-		message []byte
-		err     error
-	})
+	messageChan := make(chan []byte, 1)
+
+	// Separate goroutine to continuously listen for messages
 	go func() {
-		_, message, err := s.controlChannel.ReadMessage()
-		resultChan <- struct {
-			message []byte
-			err     error
-		}{message, err}
+		for {
+			select {
+			case <-s.ctx.Done():
+				return
+
+			default:
+				_, message, err := s.controlChannel.ReadMessage()
+				// Exit if there's an error
+				if err != nil {
+					s.logger.Error("failed to read from channel connection. ", err)
+					close(messageChan) // Closing the channel to signal completion
+					go s.Restart()
+					return
+				}
+				messageChan <- message
+			}
+		}
 	}()
 
 	for {
@@ -160,34 +171,30 @@ func (s *WsMuxTransport) channelHandler() {
 		case <-s.reqNewConnChan:
 			err := s.controlChannel.WriteMessage(websocket.BinaryMessage, []byte{utils.SG_Chan})
 			if err != nil {
-				s.logger.Error("error sending channel signal, attempting to restart server...")
+				s.logger.Error("failed to send request new connection signal. ", err)
 				go s.Restart()
 				return
 			}
 
 		case <-ticker.C:
-			if s.controlChannel == nil {
-				s.logger.Warn("control channel is nil. Restarting server to re-establish connection...")
-				go s.Restart()
-				return
-			}
 			err := s.controlChannel.WriteMessage(websocket.BinaryMessage, []byte{utils.SG_HB})
 			if err != nil {
-				s.logger.Errorf("Failed to send heartbeat signal. Error: %v. Restarting server...", err)
+				s.logger.Errorf("failed to send heartbeat signal. Error: %v.", err)
 				go s.Restart()
 				return
 			}
 			s.logger.Debug("heartbeat signal sent successfully")
 
-		case result := <-resultChan:
-			if result.err != nil {
-				s.logger.Errorf("failed to receive message from channel connection: %v", result.err)
-				go s.Restart()
+		case message, ok := <-messageChan:
+			if !ok {
+				s.logger.Error("channel closed, likely due to an error in WebSocket read")
 				return
 			}
-			if bytes.Equal(result.message, []byte{utils.SG_Closed}) {
+
+			// Handle specific control channel messages
+			if bytes.Equal(message, []byte{utils.SG_Closed}) {
 				s.logger.Info("control channel has been closed by the client")
-				go s.Restart()
+				s.Restart()
 				return
 			}
 		}
@@ -225,7 +232,15 @@ func (s *WsMuxTransport) tunnelListener() {
 				return
 			}
 
-			if r.URL.Path == "/channel" && s.controlChannel == nil {
+			if r.URL.Path == "/channel" {
+				if s.controlChannel != nil {
+					s.logger.Info("new control channel requested. restarting server...")
+					s.controlChannel.Close()
+					conn.Close()
+					go s.Restart()
+					return
+				}
+
 				s.controlChannel = conn
 
 				s.logger.Info("control channel established successfully")
