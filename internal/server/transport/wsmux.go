@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -229,9 +230,19 @@ func (s *WsMuxTransport) tunnelListener() {
 
 				s.logger.Info("control channel established successfully")
 
+				numCPU := runtime.NumCPU()
+				if numCPU > 4 {
+					numCPU = 4 // Max allowed handler is 4
+				}
+
 				go s.channelHandler()
 				go s.parsePortMappings()
-				go s.handleLoop()
+
+				s.logger.Infof("starting %d handle loops on each CPU thread", numCPU)
+
+				for i := 0; i < numCPU; i++ {
+					go s.handleLoop()
+				}
 
 				s.config.TunnelStatus = fmt.Sprintf("Connected (%s)", s.config.Mode)
 
@@ -412,7 +423,7 @@ func (s *WsMuxTransport) handleSession(session *smux.Session, next chan struct{}
 			time.Sleep(1 * time.Millisecond)
 
 			// Send the target port over the tunnel connection
-			if err := utils.SendBinaryString(stream, incomingConn.remoteAddr, utils.SG_TCP); err != nil {
+			if err := utils.SendBinaryString(stream, incomingConn.remoteAddr); err != nil {
 				s.handleSessionError(session, &incomingConn, next, done, counter, err)
 				return
 			}

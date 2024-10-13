@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -95,9 +96,20 @@ func (s *TcpMuxTransport) Start() {
 	if s.controlChannel != nil {
 		s.config.TunnelStatus = "Connected (TCPMux)"
 
+		numCPU := runtime.NumCPU()
+		if numCPU > 4 {
+			numCPU = 4 // Max allowed handler is 4
+		}
+
 		go s.parsePortMappings()
 		go s.channelHandler()
-		go s.handleLoop()
+
+		s.logger.Infof("starting %d handle loops on each CPU thread", numCPU)
+
+		for i := 0; i < numCPU; i++ {
+			go s.handleLoop()
+		}
+
 	}
 
 }
@@ -148,9 +160,9 @@ func (s *TcpMuxTransport) channelHandshake() {
 				conn.Close()
 				continue
 			}
-			msg, transport, err := utils.ReceiveBinaryString(conn)
+			msg, transport, err := utils.ReceiveBinaryTransportString(conn)
 			if transport != utils.SG_Chan {
-				s.logger.Errorf("invalid signal for channel, discard the connection")
+				s.logger.Errorf("invalid signal received for channel, Discarding connection")
 				conn.Close()
 				continue
 			} else if err != nil {
@@ -172,7 +184,7 @@ func (s *TcpMuxTransport) channelHandshake() {
 				continue
 			}
 
-			err = utils.SendBinaryString(conn, s.config.Token, utils.SG_TCP)
+			err = utils.SendBinaryTransportString(conn, s.config.Token, utils.SG_Chan)
 			if err != nil {
 				s.logger.Errorf("failed to send security token: %v", err)
 				conn.Close()
@@ -453,7 +465,7 @@ func (s *TcpMuxTransport) handleSession(session *smux.Session, next chan struct{
 			}
 
 			// Send the target port over the tunnel connection
-			if err := utils.SendBinaryString(stream, incomingConn.remoteAddr, utils.SG_TCP); err != nil {
+			if err := utils.SendBinaryString(stream, incomingConn.remoteAddr); err != nil {
 				s.handleSessionError(session, &incomingConn, next, done, counter, err)
 				return
 			}

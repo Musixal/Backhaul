@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -79,10 +80,19 @@ func (s *TcpTransport) Start() {
 	if s.controlChannel != nil {
 		s.config.TunnelStatus = "Connected (TCP)"
 
+		numCPU := runtime.NumCPU()
+		if numCPU > 4 {
+			numCPU = 4 // Max allowed handler is 4
+		}
+
 		go s.parsePortMappings()
 		go s.channelHandler()
-		go s.handleLoop()
 
+		s.logger.Infof("starting %d handle loops on each CPU thread", numCPU)
+
+		for i := 0; i < numCPU; i++ {
+			go s.handleLoop()
+		}
 	}
 }
 func (s *TcpTransport) Restart() {
@@ -133,9 +143,9 @@ func (s *TcpTransport) channelHandshake() {
 				continue
 			}
 
-			msg, transport, err := utils.ReceiveBinaryString(conn)
+			msg, transport, err := utils.ReceiveBinaryTransportString(conn)
 			if transport != utils.SG_Chan {
-				s.logger.Errorf("invalid signal for channel, discard the connection")
+				s.logger.Errorf("invalid signal received for channel, Discarding connection")
 				conn.Close()
 				continue
 			} else if err != nil {
@@ -157,7 +167,7 @@ func (s *TcpTransport) channelHandshake() {
 				continue
 			}
 
-			err = utils.SendBinaryString(conn, s.config.Token, utils.SG_TCP)
+			err = utils.SendBinaryTransportString(conn, s.config.Token, utils.SG_Chan)
 			if err != nil {
 				s.logger.Errorf("failed to send security token: %v", err)
 				conn.Close()
@@ -409,7 +419,7 @@ func (s *TcpTransport) handleLoop() {
 
 				case tunnelConn := <-s.tunnelChannel:
 					// Send the target addr over the connection
-					if err := utils.SendBinaryString(tunnelConn, localConn.remoteAddr, utils.SG_TCP); err != nil {
+					if err := utils.SendBinaryTransportString(tunnelConn, localConn.remoteAddr, utils.SG_TCP); err != nil {
 						s.logger.Errorf("%v", err)
 						tunnelConn.Close()
 						continue loop

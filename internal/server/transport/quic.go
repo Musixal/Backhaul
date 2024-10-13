@@ -252,7 +252,7 @@ func (s *QuicTransport) channelHandshake(qConn quic.Connection) {
 		qConn.CloseWithError(1, "failed to set deadline")
 		return
 	}
-	msg, _, err := utils.ReceiveBinaryString(stream)
+	msg, err := utils.ReceiveBinaryString(stream)
 	if err != nil {
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			s.logger.Warn("timeout while waiting for control channel signal")
@@ -274,7 +274,7 @@ func (s *QuicTransport) channelHandshake(qConn quic.Connection) {
 		return
 	}
 
-	err = utils.SendBinaryString(stream, s.config.Token, utils.SG_TCP)
+	err = utils.SendBinaryString(stream, s.config.Token)
 	if err != nil {
 		s.logger.Errorf("failed to send security token: %v", err)
 		stream.Close()
@@ -489,7 +489,7 @@ func (s *QuicTransport) handleSession(session quic.Connection, next chan struct{
 			}
 
 			// Send the target port over the tunnel connection
-			err = utils.SendBinaryString(stream, incomingConn.remoteAddr, utils.SG_TCP)
+			err = utils.SendBinaryString(stream, incomingConn.remoteAddr)
 			if err != nil {
 				s.logger.Errorf("failed to send address %v over stream: %v", incomingConn.remoteAddr, err)
 

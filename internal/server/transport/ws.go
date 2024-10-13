@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -208,9 +209,19 @@ func (s *WsTransport) tunnelListener() {
 
 				s.logger.Info("control channel established successfully")
 
+				numCPU := runtime.NumCPU()
+				if numCPU > 4 {
+					numCPU = 4 // Max allowed handler is 4
+				}
+
 				go s.channelHandler()
 				go s.parsePortMappings()
-				go s.handleLoop()
+
+				s.logger.Infof("starting %d handle loops on each CPU thread", numCPU)
+
+				for i := 0; i < numCPU; i++ {
+					go s.handleLoop()
+				}
 
 				s.config.TunnelStatus = fmt.Sprintf("Connected (%s)", s.config.Mode)
 
