@@ -90,12 +90,12 @@ func tcpToUDP(tcp net.Conn, udp *net.UDPConn, logger *logrus.Logger, usage *web.
 }
 
 func udpToTCP(tcp net.Conn, udp *net.UDPConn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
-	buf := make([]byte, BufferSize-10) // reserved for 10 bytes header
+	buf := make([]byte, BufferSize-6) // reserved for 5 bytes header
 
 	// Pre-allocate headers
-	header := make([]byte, 2)                                       // 2-byte header for packet size
-	timestampHeader := make([]byte, 8)                              // 8-byte header for timestamp
-	packetBuffer := bytes.NewBuffer(make([]byte, 0, BufferSize+10)) // Pre-allocated buffer for packets
+	header := make([]byte, 2)                                    // 2-byte header for packet size
+	timestampHeader := make([]byte, 4)                           // 4-byte header for timestamp
+	packetBuffer := bytes.NewBuffer(make([]byte, 0, BufferSize)) // Pre-allocated buffer for packets
 
 	for {
 		r, err := udp.Read(buf)
@@ -112,7 +112,15 @@ func udpToTCP(tcp net.Conn, udp *net.UDPConn, logger *logrus.Logger, usage *web.
 
 		// Store the current timestamp (in milliseconds)
 		timestamp := time.Now().UnixMilli()
-		binary.BigEndian.PutUint64(timestampHeader, uint64(timestamp))
+
+		// Get the last milliseconds within a 10-minute window
+		// The number 599,999 is less than 2^20, which means needs only 20 bits (just under 3 bytes) to represent it.
+		// Better than 8 bytes overhead for storing Unix Time in ms.
+		lastMillis := timestamp % (10 * 60 * 1000) // 10 minutes in milliseconds
+
+		// Using 4 bytes avoids manual slicing and is easier to work with in Go,
+		// which natively handles 32-bit (4-byte) integers.
+		binary.BigEndian.PutUint32(timestampHeader, uint32(lastMillis))
 
 		// Store the packet size as a 2-byte header
 		binary.BigEndian.PutUint16(header, uint16(r))

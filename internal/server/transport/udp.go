@@ -241,7 +241,7 @@ func udpToTCP(tcp net.Conn, udp *LocalUDPConn, logger *logrus.Logger, usage *web
 func tcpToUDP(tcp net.Conn, udp *LocalUDPConn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool, rtt int64) {
 	buf := make([]byte, BufferSize)
 	lenBuf := make([]byte, 2)       // Buffer to store the 2-byte packet length
-	timestampBuf := make([]byte, 8) // Buffer for timestamp (8 bytes)
+	timestampBuf := make([]byte, 4) // Buffer for timestamp (4 bytes)
 
 	defer func() {
 		udp.IsClosed = true
@@ -249,7 +249,7 @@ func tcpToUDP(tcp net.Conn, udp *LocalUDPConn, logger *logrus.Logger, usage *web
 	}()
 
 	for {
-		// First, read the 8-byte timestamp from the packet
+		// First, read the 4-byte timestamp from the packet
 		_, err := io.ReadFull(tcp, timestampBuf)
 		if err != nil {
 			if err == io.EOF {
@@ -260,15 +260,17 @@ func tcpToUDP(tcp net.Conn, udp *LocalUDPConn, logger *logrus.Logger, usage *web
 			return
 		}
 
-		// Convert the 8-byte timestamp header into a time.Time object
-		packetTimestamp := time.UnixMilli(int64(binary.BigEndian.Uint64(timestampBuf)))
+		// 4-byte timestamp header
+		packetTimestamp := int64(binary.BigEndian.Uint32(timestampBuf))
 
 		// Get the current time and calculate the time difference
-		currentTime := time.Now()
-		packetAge := currentTime.Sub(packetTimestamp)
+		timestamp := time.Now().UnixMilli()
+		lastMillis := timestamp % (10 * 60 * 1000)
 
-		// If the packet age exceeds the threshold (2-3x RTT), flag the connection as congested
-		if packetAge.Milliseconds() > 3*rtt {
+		packetAge := lastMillis - packetTimestamp
+
+		// If the packet age exceeds the threshold (3x RTT), flag the connection as congested
+		if packetAge > 3*rtt {
 			udp.IsCongested = true
 		}
 
