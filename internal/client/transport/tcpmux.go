@@ -133,7 +133,7 @@ func (c *TcpMuxTransport) channelDialer() {
 			}
 
 			// Sending security token
-			err = utils.SendBinaryString(tunnelConn, c.config.Token, utils.SG_Chan)
+			err = utils.SendBinaryTransportString(tunnelConn, c.config.Token, utils.SG_Chan)
 			if err != nil {
 				c.logger.Errorf("failed to send security token: %v", err)
 				tunnelConn.Close()
@@ -147,7 +147,7 @@ func (c *TcpMuxTransport) channelDialer() {
 				continue
 			}
 			// Receive response
-			message, _, err := utils.ReceiveBinaryString(tunnelConn)
+			message, _, err := utils.ReceiveBinaryTransportString(tunnelConn)
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					c.logger.Warn("timeout while waiting for control channel response")
@@ -333,7 +333,7 @@ func (c *TcpMuxTransport) handleSession(tunnelConn net.Conn) {
 				return
 			}
 
-			remoteAddr, _, err := utils.ReceiveBinaryString(stream)
+			remoteAddr, err := utils.ReceiveBinaryString(stream)
 			if err != nil {
 				c.logger.Errorf("unable to get port from stream connection %s: %v", tunnelConn.RemoteAddr().String(), err)
 				if err := session.Close(); err != nil {
