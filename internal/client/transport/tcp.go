@@ -244,6 +244,7 @@ func (c *TcpTransport) channelHandler() {
 		case <-c.ctx.Done():
 			_ = utils.SendBinaryByte(c.controlChannel, utils.SG_Closed)
 			return
+
 		case msg := <-msgChan:
 			switch msg {
 			case utils.SG_Chan:
@@ -255,12 +256,23 @@ func (c *TcpTransport) channelHandler() {
 					c.logger.Debug("channel signal received, initiating tunnel dialer")
 					go c.tunnelDialer()
 				}
+
 			case utils.SG_HB:
 				c.logger.Debug("heartbeat signal received successfully")
+
 			case utils.SG_Closed:
 				c.logger.Info("control channel has been closed by the server")
 				go c.Restart()
 				return
+
+			case utils.SG_RTT:
+				err := utils.SendBinaryByte(c.controlChannel, utils.SG_RTT)
+				if err != nil {
+					c.logger.Error("failed to send RTT signal, restarting client: ", err)
+					go c.Restart()
+					return
+				}
+
 			default:
 				c.logger.Errorf("unexpected response from channel: %v. Restarting client...", msg)
 				go c.Restart()

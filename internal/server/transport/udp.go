@@ -154,7 +154,7 @@ func (s *TcpTransport) handleUDPLoop(udpChan chan *LocalUDPConn) {
 					}
 
 					// Handle data exchange between connections
-					go UDPConnectionHandler(localConn, tunnelConn, s.logger, s.usageMonitor, localConn.listener.LocalAddr().(*net.UDPAddr).Port, s.config.Sniffer)
+					go UDPConnectionHandler(localConn, tunnelConn, s.logger, s.usageMonitor, localConn.listener.LocalAddr().(*net.UDPAddr).Port, s.config.Sniffer, s.rtt)
 
 					s.logger.Debugf("initiate new handler for connection %s with timestamp %d", localConn.clientAddr.String(), localConn.timeCreated)
 					break loop
@@ -164,7 +164,7 @@ func (s *TcpTransport) handleUDPLoop(udpChan chan *LocalUDPConn) {
 	}
 }
 
-func UDPConnectionHandler(udp *LocalUDPConn, tcp net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
+func UDPConnectionHandler(udp *LocalUDPConn, tcp net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool, rtt int64) {
 	done := make(chan struct{})
 
 	go func() {
@@ -172,7 +172,12 @@ func UDPConnectionHandler(udp *LocalUDPConn, tcp net.Conn, logger *logrus.Logger
 		done <- struct{}{}
 	}()
 
-	var rtt int64 = 100 // time.Millisecond, for tcp congest control
+	if rtt == 0 {
+		// RTT of 0 indicates that either the backhaul is running in a local environment
+		// (with negligible latency), or RTT measurement failed.
+		// Set a default RTT of 100ms to ensure proper functioning of TCP congestion control.
+		rtt = 100
+	}
 
 	tcpToUDP(tcp, udp, logger, usage, remotePort, sniffer, rtt)
 

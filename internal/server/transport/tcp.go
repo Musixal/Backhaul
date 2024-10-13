@@ -28,6 +28,7 @@ type TcpTransport struct {
 	controlChannel net.Conn
 	restartMutex   sync.Mutex
 	usageMonitor   *web.Usage
+	rtt            int64 // in ms, for UDP
 }
 
 type TcpConfig struct {
@@ -61,6 +62,7 @@ func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		reqNewConnChan: make(chan struct{}, config.ChannelSize),
 		controlChannel: nil, // will be set when a control connection is established
 		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
+		rtt:            0,
 	}
 
 	return server
@@ -193,18 +195,35 @@ func (s *TcpTransport) channelHandler() {
 	})
 
 	go func() {
-		message, err := utils.ReceiveBinaryByte(s.controlChannel)
-		resultChan <- struct {
-			message byte
-			err     error
-		}{message, err}
+		for {
+			select {
+			case <-s.ctx.Done():
+				return
+			default:
+				message, err := utils.ReceiveBinaryByte(s.controlChannel)
+				resultChan <- struct {
+					message byte
+					err     error
+				}{message, err}
+			}
+		}
 	}()
+
+	// RTT measurment
+	rtt := time.Now()
+	err := utils.SendBinaryByte(s.controlChannel, utils.SG_RTT)
+	if err != nil {
+		s.logger.Error("failed to send RTT signal, attempting to restart server...")
+		go s.Restart()
+		return
+	}
 
 	for {
 		select {
 		case <-s.ctx.Done():
 			_ = utils.SendBinaryByte(s.controlChannel, utils.SG_Closed)
 			return
+
 		case <-s.reqNewConnChan:
 			err := utils.SendBinaryByte(s.controlChannel, utils.SG_Chan)
 			if err != nil {
@@ -212,6 +231,7 @@ func (s *TcpTransport) channelHandler() {
 				go s.Restart()
 				return
 			}
+
 		case <-ticker.C:
 			err := utils.SendBinaryByte(s.controlChannel, utils.SG_HB)
 			if err != nil {
@@ -226,11 +246,14 @@ func (s *TcpTransport) channelHandler() {
 				s.logger.Errorf("failed to receive message from channel connection: %v", result.err)
 				go s.Restart()
 				return
-			}
-			if result.message == utils.SG_Closed {
-				s.logger.Info("control channel has been closed by the client")
+			} else if result.message == utils.SG_Closed {
+				s.logger.Fatal("control channel has been closed by the client")
 				go s.Restart()
 				return
+			} else if result.message == utils.SG_RTT {
+				measureRTT := time.Since(rtt)
+				s.rtt = measureRTT.Milliseconds()
+				s.logger.Infof("Round Trip Time (RTT): %d ms", s.rtt)
 			}
 		}
 	}
