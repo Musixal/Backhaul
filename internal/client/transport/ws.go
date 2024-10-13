@@ -84,8 +84,14 @@ func (c *WsTransport) Restart() {
 	defer c.restartMutex.Unlock()
 
 	c.logger.Info("restarting client...")
+
 	if c.cancel != nil {
 		c.cancel()
+	}
+
+	// close control channel connection
+	if c.controlChannel != nil {
+		c.controlChannel.Close()
 	}
 
 	time.Sleep(2 * time.Second)
@@ -132,8 +138,6 @@ func (c *WsTransport) channelDialer() {
 		}
 	}
 }
-
-
 
 func (c *WsTransport) poolMaintainer() {
 	for i := 0; i < c.config.ConnPoolSize; i++ { //initial pool filling
@@ -188,7 +192,6 @@ func (c *WsTransport) poolMaintainer() {
 
 func (c *WsTransport) channelHandler() {
 	msgChan := make(chan byte, 1000)
-	errChan := make(chan error, 1000)
 
 	// Goroutine to handle the blocking ReceiveBinaryString
 	go func() {
@@ -200,7 +203,8 @@ func (c *WsTransport) channelHandler() {
 			default:
 				_, msg, err := c.controlChannel.ReadMessage()
 				if err != nil {
-					errChan <- err
+					c.logger.Error("failed to read from channel connection. ", err)
+					go c.Restart()
 					return
 				}
 
@@ -215,6 +219,7 @@ func (c *WsTransport) channelHandler() {
 		case <-c.ctx.Done():
 			_ = c.controlChannel.WriteMessage(websocket.BinaryMessage, []byte{utils.SG_Closed})
 			return
+
 		case msg := <-msgChan:
 			switch msg {
 			case utils.SG_Chan:
@@ -226,22 +231,20 @@ func (c *WsTransport) channelHandler() {
 					c.logger.Debug("channel signal received, initiating tunnel dialer")
 					go c.tunnelDialer()
 				}
+
+			case utils.SG_HB:
+				c.logger.Debug("heartbeat signal received successfully")
+
 			case utils.SG_Closed:
 				c.logger.Info("control channel has been closed by the server")
 				go c.Restart()
 				return
-			case utils.SG_HB:
-				c.logger.Debug("heartbeat signal received successfully")
+
 			default:
-				c.logger.Errorf("unexpected response from channel: %v. Restarting client...", msg)
+				c.logger.Errorf("unexpected response from channel: %v", msg)
 				go c.Restart()
 				return
 			}
-		case err := <-errChan:
-			// Handle errors from the control channel
-			c.logger.Error("failed to read channel signal, restarting client: ", err)
-			go c.Restart()
-			return
 		}
 	}
 }

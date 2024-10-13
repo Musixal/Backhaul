@@ -96,8 +96,14 @@ func (c *WsMuxTransport) Restart() {
 	defer c.restartMutex.Unlock()
 
 	c.logger.Info("restarting client...")
+
 	if c.cancel != nil {
 		c.cancel()
+	}
+
+	// close control channel connection
+	if c.controlChannel != nil {
+		c.controlChannel.Close()
 	}
 
 	time.Sleep(2 * time.Second)
@@ -199,7 +205,6 @@ func (c *WsMuxTransport) poolMaintainer() {
 
 func (c *WsMuxTransport) channelHandler() {
 	msgChan := make(chan byte, 1000)
-	errChan := make(chan error, 1000)
 
 	// Goroutine to handle the blocking ReceiveBinaryString
 	go func() {
@@ -211,7 +216,8 @@ func (c *WsMuxTransport) channelHandler() {
 			default:
 				_, msg, err := c.controlChannel.ReadMessage()
 				if err != nil {
-					errChan <- err
+					c.logger.Error("failed to read from channel connection. ", err)
+					go c.Restart()
 					return
 				}
 				msgChan <- msg[0]
@@ -236,22 +242,20 @@ func (c *WsMuxTransport) channelHandler() {
 					c.logger.Debug("channel signal received, initiating tunnel dialer")
 					go c.tunnelDialer()
 				}
+
 			case utils.SG_HB:
 				c.logger.Debug("heartbeat received successfully")
+
 			case utils.SG_Closed:
 				c.logger.Info("control channel has been closed by the server")
 				go c.Restart()
 				return
+
 			default:
-				c.logger.Errorf("unexpected response from control channel: %v. Restarting client...", msg)
+				c.logger.Errorf("unexpected response from control channel: %v", msg)
 				go c.Restart()
 				return
-
 			}
-		case err := <-errChan:
-			c.logger.Error("failed to read channel signal, restarting client: ", err)
-			go c.Restart()
-			return
 
 		}
 	}
