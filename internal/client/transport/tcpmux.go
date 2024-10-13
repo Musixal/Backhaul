@@ -182,6 +182,8 @@ func (c *TcpMuxTransport) channelDialer() {
 
 }
 
+
+
 func (c *TcpMuxTransport) poolMaintainer() {
 	for i := 0; i < c.config.ConnPoolSize; i++ { //initial pool filling
 		go c.tunnelDialer()
@@ -190,7 +192,7 @@ func (c *TcpMuxTransport) poolMaintainer() {
 	tickerPool := time.NewTicker(time.Second * 1)
 	defer tickerPool.Stop()
 
-	tickerLoad := time.NewTicker(time.Second * 60)
+	tickerLoad := time.NewTicker(time.Second * 30)
 	defer tickerLoad.Stop()
 
 	newPoolSize := c.config.ConnPoolSize // intial value
@@ -207,11 +209,11 @@ func (c *TcpMuxTransport) poolMaintainer() {
 
 		case <-tickerLoad.C:
 			// Calculate the loadConnections over the last 30 seconds
-			loadConnections := (int(atomic.LoadInt32(&c.loadConnections)) + 59) / 60 // Every 1 second, +59 for ceil-like logic
+			loadConnections := (int(atomic.LoadInt32(&c.loadConnections)) + 29) / 30 // Every 30 seconds, +29 for ceil-like logic
 			atomic.StoreInt32(&c.loadConnections, 0)                                 // Reset
 
-			// Calculate the average pool connections over the last 10 seconds
-			poolConnectionsAvg := (int(atomic.LoadInt32(&poolConnectionsSum)) + 59) / 60 // Average connections in 1 second, +59 for ceil-like logic
+			// Calculate the average pool connections over the last 30 seconds
+			poolConnectionsAvg := (int(atomic.LoadInt32(&poolConnectionsSum)) + 29) / 30 // Average connections in 1 second, +29 for ceil-like logic
 			atomic.StoreInt32(&poolConnectionsSum, 0)                                    // Reset
 
 			// Dynamically adjust the pool size based on current connections
