@@ -46,7 +46,7 @@ func TcpDialer(address string, timeout time.Duration, keepAlive time.Duration, n
 	var tcpConn *net.TCPConn
 	var err error
 
-	retries := 3               // Number of retries
+	retries := 2               // Number of retries
 	backoff := 1 * time.Second // Initial backoff duration
 
 	for i := 0; i < retries; i++ {
@@ -142,7 +142,7 @@ func WebSocketDialer(addr string, path string, timeout time.Duration, keepalive 
 	var tunnelWSConn *websocket.Conn
 	var err error
 
-	retries := 3               // Number of retries
+	retries := 2               // Number of retries
 	backoff := 1 * time.Second // Initial backoff duration
 
 	for i := 0; i < retries; i++ {
