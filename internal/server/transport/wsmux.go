@@ -193,7 +193,7 @@ func (s *WsMuxTransport) channelHandler() {
 
 			// Handle specific control channel messages
 			if bytes.Equal(message, []byte{utils.SG_Closed}) {
-				s.logger.Info("control channel has been closed by the client")
+				s.logger.Warn("control channel has been closed by the client")
 				s.Restart()
 				return
 			}
@@ -234,7 +234,7 @@ func (s *WsMuxTransport) tunnelListener() {
 
 			if r.URL.Path == "/channel" {
 				if s.controlChannel != nil {
-					s.logger.Info("new control channel requested. restarting server...")
+					s.logger.Warn("new control channel requested.")
 					s.controlChannel.Close()
 					conn.Close()
 					go s.Restart()

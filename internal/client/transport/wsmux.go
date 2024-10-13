@@ -247,7 +247,7 @@ func (c *WsMuxTransport) channelHandler() {
 				c.logger.Debug("heartbeat received successfully")
 
 			case utils.SG_Closed:
-				c.logger.Info("control channel has been closed by the server")
+				c.logger.Warn("control channel has been closed by the server")
 				go c.Restart()
 				return
 

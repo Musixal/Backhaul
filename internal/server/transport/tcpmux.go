@@ -205,17 +205,17 @@ func (s *TcpMuxTransport) channelHandler() {
 	defer ticker.Stop()
 
 	// Channel to receive the message or error
-	resultChan := make(chan struct {
-		message byte
-		err     error
-	})
+	messageChan := make(chan byte, 1)
 
 	go func() {
 		message, err := utils.ReceiveBinaryByte(s.controlChannel)
-		resultChan <- struct {
-			message byte
-			err     error
-		}{message, err}
+		if err != nil {
+			s.logger.Error("failed to read from channel connection. ", err)
+			close(messageChan) // Closing the channel to signal completion
+			go s.Restart()
+			return
+		}
+		messageChan <- message
 	}()
 
 	for {
@@ -223,30 +223,32 @@ func (s *TcpMuxTransport) channelHandler() {
 		case <-s.ctx.Done():
 			_ = utils.SendBinaryByte(s.controlChannel, utils.SG_Closed)
 			return
+
 		case <-s.reqNewConnChan:
 			err := utils.SendBinaryByte(s.controlChannel, utils.SG_Chan)
 			if err != nil {
-				s.logger.Error("error sending channel signal, attempting to restart server...")
+				s.logger.Error("failed to send request new connection signal. ", err)
 				go s.Restart()
 				return
 			}
+
 		case <-ticker.C:
 			err := utils.SendBinaryByte(s.controlChannel, utils.SG_HB)
 			if err != nil {
-				s.logger.Error("failed to send heartbeat signal, attempting to restart server...")
+				s.logger.Error("failed to send heartbeat signal")
 				go s.Restart()
 				return
 			}
 			s.logger.Trace("heartbeat signal sent successfully")
 
-		case result := <-resultChan:
-			if result.err != nil {
-				s.logger.Errorf("failed to receive message from channel connection: %v", result.err)
-				go s.Restart()
+		case message, ok := <-messageChan:
+			if !ok {
+				s.logger.Error("channel closed, likely due to an error in TCP read")
 				return
 			}
-			if result.message == utils.SG_Closed {
-				s.logger.Info("control channel has been closed by the client")
+
+			if message == utils.SG_Closed {
+				s.logger.Warn("control channel has been closed by the client")
 				go s.Restart()
 				return
 			}
