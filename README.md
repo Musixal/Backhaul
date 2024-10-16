@@ -104,8 +104,8 @@ To start using the solution, you'll need to configure both server and client com
     log_level = "info"            # Log level ("panic", "fatal", "error", "warn", "info", "debug", "trace", optional, default: "info").
 
     ports = [
-    "443-600"         # Listen on all ports in the range 443 to 600
-    "443-600=1.1.1.1:5003" # Listen on all ports in the range 443 to 600 and forward traffic to 1.1.1.1:5003
+    "443-600",         # Listen on all ports in the range 443 to 600
+    "443-600=1.1.1.1:5003", # Listen on all ports in the range 443 to 600 and forward traffic to 1.1.1.1:5003
     "443",  # Listen on local port 443 and forward to remote port 443 (default forwarding).
     "4000=5000",  # Listen on local port 4000 (bind to all local IPs) and forward to remote port 5000.
     "127.0.0.2:4001=5001",  # Bind to specific local IP (127.0.0.2), listen on port 4001, and forward to remote port 5001.
