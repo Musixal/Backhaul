@@ -104,13 +104,14 @@ To start using the solution, you'll need to configure both server and client com
     log_level = "info"            # Log level ("panic", "fatal", "error", "warn", "info", "debug", "trace", optional, default: "info").
 
     ports = [
-    "443-600",         # Listen on all ports in the range 443 to 600
-    "443-600=1.1.1.1:5003", # Listen on all ports in the range 443 to 600 and forward traffic to 1.1.1.1:5003
-    "443",  # Listen on local port 443 and forward to remote port 443 (default forwarding).
-    "4000=5000",  # Listen on local port 4000 (bind to all local IPs) and forward to remote port 5000.
-    "127.0.0.2:4001=5001",  # Bind to specific local IP (127.0.0.2), listen on port 4001, and forward to remote port 5001.
-    "4002=1.1.1.1:5002",  # Listen on local port 4002 and forward to a specific remote IP (1.1.1.1) on port 5002.
-    "127.0.0.2:4003=1.1.1.1:5003",  # Bind to specific local IP (127.0.0.2), listen on port 4003, and forward to remote IP (1.1.1.1) on port 5003.
+    "443-600",                  # Listen on all ports in the range 443 to 600
+    "443-600:5201",             # Listen on all ports in the range 443 to 600 and forward traffic to 5201
+    "443-600=1.1.1.1:5201",     # Listen on all ports in the range 443 to 600 and forward traffic to 1.1.1.1:5201
+    "443",                      # Listen on local port 443 and forward to remote port 443 (default forwarding).
+    "4000=5000",                # Listen on local port 4000 (bind to all local IPs) and forward to remote port 5000.
+    "127.0.0.2:443=5201",       # Bind to specific local IP (127.0.0.2), listen on port 443, and forward to remote port 5201.
+    "443=1.1.1.1:5201",         # Listen on local port 443 and forward to a specific remote IP (1.1.1.1) on port 5201.
+    "127.0.0.2:443=1.1.1.1:5201",  # Bind to specific local IP (127.0.0.2), listen on port 443, and forward to remote IP (1.1.1.1) on port 5201.
    ]
 
     ```
