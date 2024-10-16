@@ -115,7 +115,7 @@ func (c *TcpTransport) channelDialer() {
 		case <-c.ctx.Done():
 			return
 		default:
-			tunnelTCPConn, err := TcpDialer(c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay)
+			tunnelTCPConn, err := TcpDialer(c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 1)
 			if err != nil {
 				c.logger.Errorf("channel dialer: error dialing remote address %s: %v", c.config.RemoteAddr, err)
 				time.Sleep(c.config.RetryInterval)
@@ -294,7 +294,7 @@ func (c *TcpTransport) tunnelDialer() {
 	c.logger.Debugf("initiating new connection to tunnel server at %s", c.config.RemoteAddr)
 
 	// Dial to the tunnel server
-	tcpConn, err := TcpDialer(c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay)
+	tcpConn, err := TcpDialer(c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 2)
 	if err != nil {
 		c.logger.Error("failed to dial tunnel server: ", err)
 
@@ -332,16 +332,14 @@ func (c *TcpTransport) tunnelDialer() {
 		UDPDialer(tcpConn, resolvedAddr, c.logger, c.usageMonitor, port, c.config.Sniffer)
 
 	} else {
-		c.logger.Error("undefined transort. close the connection, restarting the client")
+		c.logger.Error("undefined transport. close the connection.")
 		tcpConn.Close()
-		go c.Restart()
-		return
 	}
 
 }
 
 func (c *TcpTransport) localDialer(tcpConn net.Conn, remoteAddr string, port int) {
-	localConnection, err := TcpDialer(remoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay)
+	localConnection, err := TcpDialer(remoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 3)
 	if err != nil {
 		c.logger.Errorf("failed to connect to local address %s: %v", remoteAddr, err)
 		tcpConn.Close()
