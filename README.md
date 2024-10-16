@@ -14,6 +14,7 @@ Welcome to the **`Backhaul`** project! This project provides a high-performance 
    - [Detailed Configuration](#detailed-configuration)
       - [TCP Configuration](#tcp-configuration)
       - [TCP Multiplexing Configuration](#tcp-multiplexing-configuration)
+      - [UDP Configuration](#udp-configuration)
       - [WebSocket Configuration](#websocket-configuration)
       - [Secure WebSocket Configuration](#secure-websocket-configuration)
       - [WS Multiplexing Configuration](#ws-multiplexing-configuration)
@@ -84,7 +85,7 @@ To start using the solution, you'll need to configure both server and client com
     [server]# Local, IRAN
     bind_addr = "0.0.0.0:3080"    # Address and port for the server to listen on (mandatory).
     transport = "tcp"             # Protocol to use ("tcp", "tcpmux", "ws", "wss", "wsmux", "wssmux". mandatory).
-    accept_udp = true             # Enable transferring UDP connections over TCP transport. (optional, default: false)
+    accept_udp = false             # Enable transferring UDP connections over TCP transport. (optional, default: false)
     token = "your_token"          # Authentication token for secure communication (optional).
     keepalive_period = 75         # Interval in seconds to send keep-alive packets.(optional, default: 75s)
     nodelay = false               # Enable TCP_NODELAY (optional, default: false).
@@ -154,6 +155,7 @@ To start using the solution, you'll need to configure both server and client com
    [server]
    bind_addr = "0.0.0.0:3080"
    transport = "tcp"
+   accept_udp = false 
    token = "your_token"
    keepalive_period = 75  
    nodelay = true 
@@ -194,6 +196,38 @@ To start using the solution, you'll need to configure both server and client com
    `connection_pool`: Set the number of pre-established connections for better latency.
    
    `nodelay`: Refers to a TCP socket option (TCP_NODELAY) that improve the latency but decrease the bandwidth
+
+#### UDP Configuration
+* **Server**:
+
+   ```toml
+   [server]
+   bind_addr = "0.0.0.0:3080"
+   transport = "udp"
+   token = "your_token"
+   heartbeat = 20 
+   channel_size = 2048
+   sniffer = false 
+   web_port = 2060
+   sniffer_log = "/root/backhaul.json"
+   log_level = "info"
+   ports = []
+   ```
+* **Client**:
+
+   ```toml
+   [client]
+   remote_addr = "0.0.0.0:3080"
+   transport = "udp"
+   token = "your_token" 
+   connection_pool = 8
+   retry_interval = 3
+   sniffer = false
+   web_port = 2060 
+   sniffer_log = "/root/backhaul.json"
+   log_level = "info"
+
+   ```
 
 #### TCP Multiplexing Configuration
 * **Server**:

@@ -144,12 +144,31 @@ func (s *Server) Start() {
 		quicServer := transport.NewQuicServer(s.ctx, quicConfig, s.logger)
 		go quicServer.TunnelListener()
 
+	} else if s.config.Transport == config.UDP {
+		udpConfig := &transport.UdpConfig{
+			BindAddr:    s.config.BindAddr,
+			Heartbeat:   time.Duration(s.config.Heartbeat) * time.Second,
+			Token:       s.config.Token,
+			ChannelSize: s.config.ChannelSize,
+			Ports:       s.config.Ports,
+			Sniffer:     s.config.Sniffer,
+			WebPort:     s.config.WebPort,
+			SnifferLog:  s.config.SnifferLog,
+		}
+
+		udpServer := transport.NewUDPServer(s.ctx, udpConfig, s.logger)
+		go udpServer.Start()
+
 	} else {
 		s.logger.Fatal("invalid transport type: ", s.config.Transport)
 	}
 
 	<-s.ctx.Done()
+
 	s.logger.Info("all workers stopped successfully")
+
+	// supress other logs
+	s.logger.SetLevel(logrus.FatalLevel)
 }
 
 // Stop shuts down the server gracefully

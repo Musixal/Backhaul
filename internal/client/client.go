@@ -48,16 +48,16 @@ func (c *Client) Start() {
 
 	if c.config.Transport == config.TCP {
 		tcpConfig := &transport.TcpConfig{
-			RemoteAddr:     c.config.RemoteAddr,
-			Nodelay:        c.config.Nodelay,
-			KeepAlive:      time.Duration(c.config.Keepalive) * time.Second,
-			RetryInterval:  time.Duration(c.config.RetryInterval) * time.Second,
-			DialTimeOut:    time.Duration(c.config.DialTimeout) * time.Second,
-			ConnPoolSize: c.config.ConnectionPool,
-			Token:          c.config.Token,
-			Sniffer:        c.config.Sniffer,
-			WebPort:        c.config.WebPort,
-			SnifferLog:     c.config.SnifferLog,
+			RemoteAddr:    c.config.RemoteAddr,
+			Nodelay:       c.config.Nodelay,
+			KeepAlive:     time.Duration(c.config.Keepalive) * time.Second,
+			RetryInterval: time.Duration(c.config.RetryInterval) * time.Second,
+			DialTimeOut:   time.Duration(c.config.DialTimeout) * time.Second,
+			ConnPoolSize:  c.config.ConnectionPool,
+			Token:         c.config.Token,
+			Sniffer:       c.config.Sniffer,
+			WebPort:       c.config.WebPort,
+			SnifferLog:    c.config.SnifferLog,
 		}
 		tcpClient := transport.NewTCPClient(c.ctx, tcpConfig, c.logger)
 		go tcpClient.Start()
@@ -69,7 +69,7 @@ func (c *Client) Start() {
 			KeepAlive:        time.Duration(c.config.Keepalive) * time.Second,
 			RetryInterval:    time.Duration(c.config.RetryInterval) * time.Second,
 			DialTimeOut:      time.Duration(c.config.DialTimeout) * time.Second,
-			ConnPoolSize:   c.config.ConnectionPool,
+			ConnPoolSize:     c.config.ConnectionPool,
 			Token:            c.config.Token,
 			MuxVersion:       c.config.MuxVersion,
 			MaxFrameSize:     c.config.MaxFrameSize,
@@ -84,17 +84,17 @@ func (c *Client) Start() {
 
 	} else if c.config.Transport == config.WS || c.config.Transport == config.WSS {
 		WsConfig := &transport.WsConfig{
-			RemoteAddr:     c.config.RemoteAddr,
-			Nodelay:        c.config.Nodelay,
-			KeepAlive:      time.Duration(c.config.Keepalive) * time.Second,
-			RetryInterval:  time.Duration(c.config.RetryInterval) * time.Second,
-			DialTimeOut:    time.Duration(c.config.DialTimeout) * time.Second,
-			ConnPoolSize: c.config.ConnectionPool,
-			Token:          c.config.Token,
-			Sniffer:        c.config.Sniffer,
-			WebPort:        c.config.WebPort,
-			SnifferLog:     c.config.SnifferLog,
-			Mode:           c.config.Transport,
+			RemoteAddr:    c.config.RemoteAddr,
+			Nodelay:       c.config.Nodelay,
+			KeepAlive:     time.Duration(c.config.Keepalive) * time.Second,
+			RetryInterval: time.Duration(c.config.RetryInterval) * time.Second,
+			DialTimeOut:   time.Duration(c.config.DialTimeout) * time.Second,
+			ConnPoolSize:  c.config.ConnectionPool,
+			Token:         c.config.Token,
+			Sniffer:       c.config.Sniffer,
+			WebPort:       c.config.WebPort,
+			SnifferLog:    c.config.SnifferLog,
+			Mode:          c.config.Transport,
 		}
 		WsClient := transport.NewWSClient(c.ctx, WsConfig, c.logger)
 		go WsClient.Start()
@@ -106,7 +106,7 @@ func (c *Client) Start() {
 			KeepAlive:        time.Duration(c.config.Keepalive) * time.Second,
 			RetryInterval:    time.Duration(c.config.RetryInterval) * time.Second,
 			DialTimeOut:      time.Duration(c.config.DialTimeout) * time.Second,
-			ConnPoolSize:   c.config.ConnectionPool,
+			ConnPoolSize:     c.config.ConnectionPool,
 			Token:            c.config.Token,
 			MuxVersion:       c.config.MuxVersion,
 			MaxFrameSize:     c.config.MaxFrameSize,
@@ -136,6 +136,20 @@ func (c *Client) Start() {
 		quicClient := transport.NewQuicClient(c.ctx, quicConfig, c.logger)
 		go quicClient.ChannelDialer(true)
 
+	} else if c.config.Transport == config.UDP {
+		udpConfig := &transport.UdpConfig{
+			RemoteAddr:    c.config.RemoteAddr,
+			RetryInterval: time.Duration(c.config.RetryInterval) * time.Second,
+			DialTimeOut:   time.Duration(c.config.DialTimeout) * time.Second,
+			ConnPoolSize:  c.config.ConnectionPool,
+			Token:         c.config.Token,
+			Sniffer:       c.config.Sniffer,
+			WebPort:       c.config.WebPort,
+			SnifferLog:    c.config.SnifferLog,
+		}
+		udpClient := transport.NewUDPClient(c.ctx, udpConfig, c.logger)
+		go udpClient.Start()
+
 	} else {
 		c.logger.Fatal("invalid transport type: ", c.config.Transport)
 	}
@@ -143,6 +157,10 @@ func (c *Client) Start() {
 	<-c.ctx.Done()
 
 	c.logger.Info("all workers stopped successfully")
+
+	// supress other logs
+	c.logger.SetLevel(logrus.FatalLevel)
+
 }
 func (c *Client) Stop() {
 	if c.cancel != nil {
