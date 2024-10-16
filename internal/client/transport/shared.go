@@ -42,11 +42,11 @@ func ResolveRemoteAddr(remoteAddr string) (int, string, error) {
 	return port, remoteAddr, nil
 }
 
-func TcpDialer(address string, timeout time.Duration, keepAlive time.Duration, nodelay bool) (*net.TCPConn, error) {
+func TcpDialer(address string, timeout time.Duration, keepAlive time.Duration, nodelay bool, retry int) (*net.TCPConn, error) {
 	var tcpConn *net.TCPConn
 	var err error
 
-	retries := 2               // Number of retries
+	retries := retry           // Number of retries
 	backoff := 1 * time.Second // Initial backoff duration
 
 	for i := 0; i < retries; i++ {
@@ -138,11 +138,11 @@ func ReusePortControl(network, address string, s syscall.RawConn) error {
 	return controlErr
 }
 
-func WebSocketDialer(addr string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType) (*websocket.Conn, error) {
+func WebSocketDialer(addr string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType, retry int) (*websocket.Conn, error) {
 	var tunnelWSConn *websocket.Conn
 	var err error
 
-	retries := 2               // Number of retries
+	retries := retry           // Number of retries
 	backoff := 1 * time.Second // Initial backoff duration
 
 	for i := 0; i < retries; i++ {
@@ -183,7 +183,7 @@ func attemptDialWebSocket(addr string, path string, timeout time.Duration, keepa
 		dialer = websocket.Dialer{
 			HandshakeTimeout: timeout, // Set handshake timeout
 			NetDial: func(_, addr string) (net.Conn, error) {
-				conn, err := TcpDialer(addr, timeout, keepalive, nodelay)
+				conn, err := TcpDialer(addr, timeout, keepalive, nodelay, 1)
 				if err != nil {
 					return nil, err
 				}
@@ -196,7 +196,7 @@ func attemptDialWebSocket(addr string, path string, timeout time.Duration, keepa
 			TLSClientConfig:  tlsConfig, // Pass the insecure TLS config here
 			HandshakeTimeout: timeout,   // Set handshake timeout
 			NetDial: func(_, addr string) (net.Conn, error) {
-				conn, err := TcpDialer(addr, timeout, keepalive, nodelay)
+				conn, err := TcpDialer(addr, timeout, keepalive, nodelay, 1)
 				if err != nil {
 					return nil, err
 				}
