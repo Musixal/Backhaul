@@ -47,6 +47,7 @@ type QuicConfig struct {
 	MaxStreamBuffer  int
 	ConnectionPool   int
 	WebPort          int
+	AggressivePool bool
 }
 
 func NewQuicClient(parentCtx context.Context, config *QuicConfig, logger *logrus.Logger) *QuicTransport {

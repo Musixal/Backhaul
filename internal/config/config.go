@@ -60,6 +60,7 @@ type ClientConfig struct {
 	WebPort          int           `toml:"web_port"`
 	SnifferLog       string        `toml:"sniffer_log"`
 	DialTimeout      int           `toml:"dial_timeout"`
+	AggressivePool   bool          `toml:"aggressive_pool"`
 }
 
 // Config represents the complete configuration, including both server and client settings.

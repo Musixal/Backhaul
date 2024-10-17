@@ -47,6 +47,7 @@ type WsMuxConfig struct {
 	ConnPoolSize     int
 	WebPort          int
 	Mode             config.TransportType
+	AggressivePool   bool
 }
 
 func NewWSMuxClient(parentCtx context.Context, config *WsMuxConfig, logger *logrus.Logger) *WsMuxTransport {
@@ -72,7 +73,7 @@ func NewWSMuxClient(parentCtx context.Context, config *WsMuxConfig, logger *logr
 		usageMonitor:    web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 		poolConnections: 0,
 		loadConnections: 0,
-		controlFlow:     make(chan struct{}),
+		controlFlow:     make(chan struct{}, 100),
 	}
 
 	return client
@@ -118,7 +119,7 @@ func (c *WsMuxTransport) Restart() {
 	c.config.TunnelStatus = ""
 	c.poolConnections = 0
 	c.loadConnections = 0
-	c.controlFlow = make(chan struct{})
+	c.controlFlow = make(chan struct{}, 100)
 
 	go c.Start()
 
@@ -157,6 +158,20 @@ func (c *WsMuxTransport) poolMaintainer() {
 		go c.tunnelDialer()
 	}
 
+	// factors
+	a := 4
+	b := 5
+	x := 3
+	y := 4.0
+
+	if c.config.AggressivePool {
+		c.logger.Info("aggressive pool management enabled")
+		a = 1
+		b = 2
+		x = 0
+		y = 0.75
+	}
+
 	tickerPool := time.NewTicker(time.Second * 1)
 	defer tickerPool.Stop()
 
@@ -185,14 +200,14 @@ func (c *WsMuxTransport) poolMaintainer() {
 			atomic.StoreInt32(&poolConnectionsSum, 0)                                    // Reset
 
 			// Dynamically adjust the pool size based on current connections
-			if (loadConnections+4)/5 > poolConnectionsAvg { // caclulate in 200ms
+			if (loadConnections + a) > poolConnectionsAvg*b {
 				c.logger.Infof("increasing pool size: %d -> %d, avg pool conn: %d, avg load conn: %d", newPoolSize, newPoolSize+1, poolConnectionsAvg, loadConnections)
 				newPoolSize++
 
 				// Add a new connection to the pool
 				go c.tunnelDialer()
-			} else if (loadConnections+3)/4 < poolConnectionsAvg && newPoolSize > c.config.ConnPoolSize { // tolerance for decreasing pool is 20%
-				c.logger.Infof("decreasing pool size: %d -> %d", newPoolSize, newPoolSize-1)
+			} else if float64(loadConnections+x) < float64(poolConnectionsAvg)*y && newPoolSize > c.config.ConnPoolSize {
+				c.logger.Infof("decreasing pool size: %d -> %d, avg pool conn: %d, avg load conn: %d", newPoolSize, newPoolSize-1, poolConnectionsAvg, loadConnections)
 				newPoolSize--
 
 				// send a signal to controlFlow
