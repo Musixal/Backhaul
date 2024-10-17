@@ -130,6 +130,7 @@ To start using the solution, you'll need to configure both server and client com
    transport = "tcp"             # Protocol to use ("tcp", "tcpmux", "ws", "wss", "wsmux", "wssmux". mandatory).
    token = "your_token"          # Authentication token for secure communication (optional).
    connection_pool = 8           # Number of pre-established connections.(optional, default: 8).
+   aggressive_pool = false       # Enables aggressive connection pool management.(optional, default: false).
    keepalive_period = 75         # Interval in seconds to send keep-alive packets. (optional, default: 75s)
    nodelay = false               # Use TCP_NODELAY (optional, default: false).
    retry_interval = 3            # Retry interval in seconds (optional, default: 3s).
@@ -178,6 +179,7 @@ To start using the solution, you'll need to configure both server and client com
    transport = "tcp"
    token = "your_token" 
    connection_pool = 8
+   aggressive_pool = false
    keepalive_period = 75
    dial_timeout = 10
    nodelay = true 
@@ -224,6 +226,7 @@ To start using the solution, you'll need to configure both server and client com
    transport = "udp"
    token = "your_token" 
    connection_pool = 8
+   aggressive_pool = false
    retry_interval = 3
    sniffer = false
    web_port = 2060 
@@ -263,6 +266,7 @@ To start using the solution, you'll need to configure both server and client com
    transport = "tcpmux"
    token = "your_token" 
    connection_pool = 8
+   aggressive_pool = false
    keepalive_period = 75
    dial_timeout = 10
    retry_interval = 3
@@ -310,6 +314,7 @@ To start using the solution, you'll need to configure both server and client com
    transport = "ws"
    token = "your_token" 
    connection_pool = 8
+   aggressive_pool = false
    keepalive_period = 75 
    dial_timeout = 10
    retry_interval = 3
@@ -352,6 +357,7 @@ To start using the solution, you'll need to configure both server and client com
    transport = "wss"
    token = "your_token" 
    connection_pool = 8
+   aggressive_pool = false
    keepalive_period = 75
    dial_timeout = 10
    retry_interval = 3  
@@ -398,6 +404,7 @@ To start using the solution, you'll need to configure both server and client com
    transport = "wsmux"
    token = "your_token" 
    connection_pool = 8
+   aggressive_pool = false
    keepalive_period = 75
    dial_timeout = 10
    nodelay = true
@@ -449,6 +456,7 @@ To start using the solution, you'll need to configure both server and client com
    nodelay = true
    retry_interval = 3
    connection_pool = 8
+   aggressive_pool = false
    mux_version = 1
    mux_framesize = 32768 
    mux_recievebuffer = 4194304
