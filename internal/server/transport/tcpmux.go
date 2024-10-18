@@ -125,6 +125,10 @@ func (s *TcpMuxTransport) Restart() {
 		s.cancel()
 	}
 
+	// for removing timeout logs
+	level := s.logger.Level
+	s.logger.SetLevel(logrus.FatalLevel)
+
 	// Close any open connections in the tunnel channel.
 	if s.controlChannel != nil {
 		s.controlChannel.Close()
@@ -144,6 +148,9 @@ func (s *TcpMuxTransport) Restart() {
 	s.controlChannel = nil
 	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.config.Sniffer, &s.config.TunnelStatus, s.logger)
 	s.config.TunnelStatus = ""
+
+	// set the log level again
+	s.logger.SetLevel(level)
 
 	go s.Start()
 }
@@ -210,9 +217,10 @@ func (s *TcpMuxTransport) channelHandler() {
 	go func() {
 		message, err := utils.ReceiveBinaryByte(s.controlChannel)
 		if err != nil {
-			s.logger.Error("failed to read from channel connection. ", err)
-			close(messageChan) // Closing the channel to signal completion
-			go s.Restart()
+			if s.cancel != nil {
+				s.logger.Error("failed to read from channel connection. ", err)
+				go s.Restart()
+			}
 			return
 		}
 		messageChan <- message
@@ -382,7 +390,7 @@ func (s *TcpMuxTransport) parsePortMappings() {
 				for port := startPort; port <= endPort; port++ {
 					localAddr = fmt.Sprintf(":%d", port)
 					go s.localListener(localAddr, strconv.Itoa(port)) // Use port as the remoteAddr
-					time.Sleep(1 * time.Millisecond)                   // for wide port ranges
+					time.Sleep(1 * time.Millisecond)                  // for wide port ranges
 				}
 				continue
 			} else {
@@ -439,7 +447,6 @@ func (s *TcpMuxTransport) parsePortMappings() {
 		go s.localListener(localAddr, remoteAddr)
 	}
 }
-
 
 func (s *TcpMuxTransport) localListener(localAddr string, remoteAddr string) {
 	listener, err := net.Listen("tcp", localAddr)

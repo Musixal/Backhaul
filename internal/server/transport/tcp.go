@@ -105,6 +105,11 @@ func (s *TcpTransport) Restart() {
 	defer s.restartMutex.Unlock()
 
 	s.logger.Info("restarting server...")
+
+	// for removing timeout logs
+	level := s.logger.Level
+	s.logger.SetLevel(logrus.FatalLevel)
+
 	if s.cancel != nil {
 		s.cancel()
 	}
@@ -128,8 +133,10 @@ func (s *TcpTransport) Restart() {
 	s.config.TunnelStatus = ""
 	s.controlChannel = nil
 
-	go s.Start()
+	// set the log level again
+	s.logger.SetLevel(level)
 
+	go s.Start()
 }
 
 func (s *TcpTransport) channelHandshake() {
@@ -199,9 +206,10 @@ func (s *TcpTransport) channelHandler() {
 			default:
 				message, err := utils.ReceiveBinaryByte(s.controlChannel)
 				if err != nil {
-					s.logger.Error("failed to read from channel connection. ", err)
-					close(messageChan) // Closing the channel to signal completion
-					go s.Restart()
+					if s.cancel != nil {
+						s.logger.Error("failed to read from channel connection. ", err)
+						go s.Restart()
+					}
 					return
 				}
 				messageChan <- message

@@ -82,13 +82,14 @@ func (s *UdpTransport) Restart() {
 	defer s.restartMutex.Unlock()
 
 	s.logger.Info("restarting server...")
-	if s.cancel != nil {
-		s.cancel()
-	}
 
 	// for removing timeout logs
 	level := s.logger.Level
 	s.logger.SetLevel(logrus.FatalLevel)
+
+	if s.cancel != nil {
+		s.cancel()
+	}
 
 	// Close open connection
 	if s.controlChannel != nil {
@@ -208,9 +209,10 @@ func (s *UdpTransport) channelHandler() {
 			default:
 				message, err := utils.ReceiveBinaryByte(s.controlChannel)
 				if err != nil {
-					s.logger.Error("failed to read from channel connection. ", err)
-					close(messageChan) // Closing the channel to signal completion
-					go s.Restart()
+					if s.cancel != nil {
+						s.logger.Error("failed to read from channel connection. ", err)
+						go s.Restart()
+					}
 					return
 				}
 				messageChan <- message
@@ -363,8 +365,6 @@ func (s *UdpTransport) acceptTunnelConn(listener *net.UDPConn) {
 	}
 }
 
-
-
 func (s *UdpTransport) parsePortMappings() {
 	for _, portMapping := range s.config.Ports {
 		parts := strings.Split(portMapping, "=")
@@ -398,7 +398,7 @@ func (s *UdpTransport) parsePortMappings() {
 				for port := startPort; port <= endPort; port++ {
 					localAddr = fmt.Sprintf(":%d", port)
 					go s.localListener(localAddr, strconv.Itoa(port)) // Use port as the remoteAddr
-					time.Sleep(1 * time.Millisecond)                   // for wide port ranges
+					time.Sleep(1 * time.Millisecond)                  // for wide port ranges
 				}
 				continue
 			} else {
@@ -455,8 +455,6 @@ func (s *UdpTransport) parsePortMappings() {
 		go s.localListener(localAddr, remoteAddr)
 	}
 }
-
-
 
 func (s *UdpTransport) localListener(localAddr, remoteAddr string) {
 	localUDPAddr, err := net.ResolveUDPAddr("udp", localAddr)
