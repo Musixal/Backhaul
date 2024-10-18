@@ -98,6 +98,10 @@ func (c *WsMuxTransport) Restart() {
 
 	c.logger.Info("restarting client...")
 
+	// for removing timeout logs
+	level := c.logger.Level
+	c.logger.SetLevel(logrus.FatalLevel)
+
 	if c.cancel != nil {
 		c.cancel()
 	}
@@ -121,8 +125,10 @@ func (c *WsMuxTransport) Restart() {
 	c.loadConnections = 0
 	c.controlFlow = make(chan struct{}, 100)
 
-	go c.Start()
+	// set the log level again
+	c.logger.SetLevel(level)
 
+	go c.Start()
 }
 
 func (c *WsMuxTransport) channelDialer() {
@@ -134,7 +140,7 @@ func (c *WsMuxTransport) channelDialer() {
 			return
 		default:
 
-			tunnelWSConn, err := WebSocketDialer(c.config.RemoteAddr, "/channel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode, 1)
+			tunnelWSConn, err := WebSocketDialer(c.ctx, c.config.RemoteAddr, "/channel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode, 3)
 			if err != nil {
 				c.logger.Errorf("failed to dial %s control channel: %v", c.config.Mode, err)
 				time.Sleep(c.config.RetryInterval)
@@ -175,7 +181,7 @@ func (c *WsMuxTransport) poolMaintainer() {
 	tickerPool := time.NewTicker(time.Second * 1)
 	defer tickerPool.Stop()
 
-	tickerLoad := time.NewTicker(time.Second * 30)
+	tickerLoad := time.NewTicker(time.Second * 10)
 	defer tickerLoad.Stop()
 
 	newPoolSize := c.config.ConnPoolSize // intial value
@@ -191,23 +197,23 @@ func (c *WsMuxTransport) poolMaintainer() {
 			atomic.AddInt32(&poolConnectionsSum, atomic.LoadInt32(&c.poolConnections))
 
 		case <-tickerLoad.C:
-			// Calculate the loadConnections over the last 30 seconds
-			loadConnections := (int(atomic.LoadInt32(&c.loadConnections)) + 29) / 30 // Every 30 seconds, +29 for ceil-like logic
-			atomic.StoreInt32(&c.loadConnections, 0)                                 // Reset
+			// Calculate the loadConnections over the last 10 seconds
+			loadConnections := (int(atomic.LoadInt32(&c.loadConnections)) + 9) / 10 // +9 for ceil-like logic
+			atomic.StoreInt32(&c.loadConnections, 0)                                // Reset
 
-			// Calculate the average pool connections over the last 30 seconds
-			poolConnectionsAvg := (int(atomic.LoadInt32(&poolConnectionsSum)) + 29) / 30 // Average connections in 1 second, +29 for ceil-like logic
-			atomic.StoreInt32(&poolConnectionsSum, 0)                                    // Reset
+			// Calculate the average pool connections over the last 10 seconds
+			poolConnectionsAvg := (int(atomic.LoadInt32(&poolConnectionsSum)) + 9) / 10 // +9 for ceil-like logic
+			atomic.StoreInt32(&poolConnectionsSum, 0)                                   // Reset
 
 			// Dynamically adjust the pool size based on current connections
 			if (loadConnections + a) > poolConnectionsAvg*b {
-				c.logger.Infof("increasing pool size: %d -> %d, avg pool conn: %d, avg load conn: %d", newPoolSize, newPoolSize+1, poolConnectionsAvg, loadConnections)
+				c.logger.Debugf("increasing pool size: %d -> %d, avg pool conn: %d, avg load conn: %d", newPoolSize, newPoolSize+1, poolConnectionsAvg, loadConnections)
 				newPoolSize++
 
 				// Add a new connection to the pool
 				go c.tunnelDialer()
 			} else if float64(loadConnections+x) < float64(poolConnectionsAvg)*y && newPoolSize > c.config.ConnPoolSize {
-				c.logger.Infof("decreasing pool size: %d -> %d, avg pool conn: %d, avg load conn: %d", newPoolSize, newPoolSize-1, poolConnectionsAvg, loadConnections)
+				c.logger.Debugf("decreasing pool size: %d -> %d, avg pool conn: %d, avg load conn: %d", newPoolSize, newPoolSize-1, poolConnectionsAvg, loadConnections)
 				newPoolSize--
 
 				// send a signal to controlFlow
@@ -231,8 +237,10 @@ func (c *WsMuxTransport) channelHandler() {
 			default:
 				_, msg, err := c.controlChannel.ReadMessage()
 				if err != nil {
-					c.logger.Error("failed to read from channel connection. ", err)
-					go c.Restart()
+					if c.cancel != nil {
+						c.logger.Error("failed to read from channel connection. ", err)
+						go c.Restart()
+					}
 					return
 				}
 				msgChan <- msg[0]
@@ -260,6 +268,13 @@ func (c *WsMuxTransport) channelHandler() {
 
 			case utils.SG_HB:
 				c.logger.Debug("heartbeat received successfully")
+				err := c.controlChannel.WriteMessage(websocket.BinaryMessage, []byte{utils.SG_HB})
+				if err != nil {
+					c.logger.Errorf("failed to send heartbeat: %v", msg)
+					go c.Restart()
+					return
+				}
+				c.logger.Trace("heartbeat signal sent successfully")
 
 			case utils.SG_Closed:
 				c.logger.Warn("control channel has been closed by the server")
@@ -280,7 +295,7 @@ func (c *WsMuxTransport) tunnelDialer() {
 	c.logger.Debugf("initiating new %s tunnel connection to address %s", c.config.Mode, c.config.RemoteAddr)
 
 	// Dial to the tunnel server
-	tunnelWSConn, err := WebSocketDialer(c.config.RemoteAddr, "/tunnel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode, 2)
+	tunnelWSConn, err := WebSocketDialer(c.ctx, c.config.RemoteAddr, "/tunnel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode, 3)
 	if err != nil {
 		c.logger.Errorf("failed to dial %s tunnel server: %v", c.config.Mode, err)
 
@@ -339,7 +354,7 @@ func (c *WsMuxTransport) localDialer(stream *smux.Stream, remoteAddr string) {
 		return
 	}
 
-	localConnection, err := TcpDialer(resolvedAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 3)
+	localConnection, err := TcpDialer(c.ctx, resolvedAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 1)
 	if err != nil {
 		c.logger.Errorf("connecting to local address %s is not possible", remoteAddr)
 		stream.Close()
