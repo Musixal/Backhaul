@@ -576,9 +576,12 @@ This project is licensed under the AGPL-3.0 license. See the LICENSE file for de
 
 ## Donation
 
-   <a href="https://nowpayments.io/donation?api_key=6Z16MRY-AF14Y8T-J24TXVS-00RDKK7&source=lk_donation&medium=referral" target="_blank">
-     <img src="https://nowpayments.io/images/embeds/donation-button-white.svg" alt="Crypto donation button by NOWPayments">
-    </a>
+Donate TRX (TRC-20) to support our project:
+``` wallet
+TMVBGzX4qpt12R1qWsJMpT1ttoKH1kus1H
+```
+Thanks for your support! 
 
 ## Stargazers over time
 [![Stargazers over time](https://starchart.cc/Musixal/Backhaul.svg?variant=light)](https://starchart.cc/Musixal/Backhaul)
+
