@@ -1,7 +1,6 @@
 package transport
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -108,6 +107,11 @@ func (s *WsMuxTransport) Restart() {
 	defer s.restartMutex.Unlock()
 
 	s.logger.Info("restarting server...")
+
+	// for removing timeout logs
+	level := s.logger.Level
+	s.logger.SetLevel(logrus.FatalLevel)
+
 	if s.cancel != nil {
 		s.cancel()
 	}
@@ -131,8 +135,10 @@ func (s *WsMuxTransport) Restart() {
 	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.config.Sniffer, &s.config.TunnelStatus, s.logger)
 	s.config.TunnelStatus = ""
 
-	go s.Start()
+	// set the log level again
+	s.logger.SetLevel(level)
 
+	go s.Start()
 }
 
 func (s *WsMuxTransport) channelHandler() {
@@ -140,7 +146,7 @@ func (s *WsMuxTransport) channelHandler() {
 	defer ticker.Stop()
 
 	// Channel to receive the message or error
-	messageChan := make(chan []byte, 1)
+	messageChan := make(chan byte, 10)
 
 	// Separate goroutine to continuously listen for messages
 	go func() {
@@ -150,15 +156,16 @@ func (s *WsMuxTransport) channelHandler() {
 				return
 
 			default:
-				_, message, err := s.controlChannel.ReadMessage()
+				_, msg, err := s.controlChannel.ReadMessage()
 				// Exit if there's an error
 				if err != nil {
-					s.logger.Error("failed to read from channel connection. ", err)
-					close(messageChan) // Closing the channel to signal completion
-					go s.Restart()
+					if s.cancel != nil {
+						s.logger.Error("failed to read from channel connection. ", err)
+						go s.Restart()
+					}
 					return
 				}
-				messageChan <- message
+				messageChan <- msg[0]
 			}
 		}
 	}()
@@ -185,18 +192,26 @@ func (s *WsMuxTransport) channelHandler() {
 			}
 			s.logger.Debug("heartbeat signal sent successfully")
 
-		case message, ok := <-messageChan:
+		case msg, ok := <-messageChan:
 			if !ok {
 				s.logger.Error("channel closed, likely due to an error in WebSocket read")
 				return
 			}
+			switch msg {
+			case utils.SG_HB:
+				s.logger.Trace("heartbeat signal received successfully")
 
-			// Handle specific control channel messages
-			if bytes.Equal(message, []byte{utils.SG_Closed}) {
+			case utils.SG_Closed:
 				s.logger.Warn("control channel has been closed by the client")
 				s.Restart()
 				return
+
+			default:
+				s.logger.Errorf("unexpected response from channel: %v", msg)
+				go s.Restart()
+				return
 			}
+
 		}
 	}
 }
@@ -204,8 +219,9 @@ func (s *WsMuxTransport) channelHandler() {
 func (s *WsMuxTransport) tunnelListener() {
 	addr := s.config.BindAddr
 	upgrader := websocket.Upgrader{
-		ReadBufferSize:  16 * 1024,
-		WriteBufferSize: 16 * 1024,
+		ReadBufferSize:   16 * 1024,
+		WriteBufferSize:  16 * 1024,
+		HandshakeTimeout: 45 * time.Second,
 		CheckOrigin: func(r *http.Request) bool {
 			return true
 		},
@@ -214,7 +230,7 @@ func (s *WsMuxTransport) tunnelListener() {
 	// Create an HTTP server
 	server := &http.Server{
 		Addr:        addr,
-		IdleTimeout: 600 * time.Second,
+		IdleTimeout: -1,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			s.logger.Tracef("received http request from %s", r.RemoteAddr)
 
