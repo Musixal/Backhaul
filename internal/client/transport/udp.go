@@ -123,7 +123,7 @@ func (c *UdpTransport) channelDialer() {
 		default:
 			tunnelTCPConn, err := TcpDialer(c.ctx, c.config.RemoteAddr, c.config.DialTimeOut, 30, true, 3)
 			if err != nil {
-				c.logger.Errorf("channel dialer: error dialing remote address %s: %v", c.config.RemoteAddr, err)
+				c.logger.Errorf("channel dialer: %v", err)
 				time.Sleep(c.config.RetryInterval)
 				continue
 			}

@@ -142,7 +142,7 @@ func (c *WsMuxTransport) channelDialer() {
 
 			tunnelWSConn, err := WebSocketDialer(c.ctx, c.config.RemoteAddr, "/channel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode, 3)
 			if err != nil {
-				c.logger.Errorf("failed to dial %s control channel: %v", c.config.Mode, err)
+				c.logger.Errorf("control channel dialer: %v", err)
 				time.Sleep(c.config.RetryInterval)
 				continue
 			}
@@ -297,7 +297,7 @@ func (c *WsMuxTransport) tunnelDialer() {
 	// Dial to the tunnel server
 	tunnelWSConn, err := WebSocketDialer(c.ctx, c.config.RemoteAddr, "/tunnel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode, 3)
 	if err != nil {
-		c.logger.Errorf("failed to dial %s tunnel server: %v", c.config.Mode, err)
+		c.logger.Errorf("tunnel server dialer: %v", err)
 
 		return
 	}
@@ -356,7 +356,7 @@ func (c *WsMuxTransport) localDialer(stream *smux.Stream, remoteAddr string) {
 
 	localConnection, err := TcpDialer(c.ctx, resolvedAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 1)
 	if err != nil {
-		c.logger.Errorf("connecting to local address %s is not possible", remoteAddr)
+		c.logger.Errorf("local dialer: %v", err)
 		stream.Close()
 		return
 	}

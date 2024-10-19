@@ -124,7 +124,7 @@ func (c *TcpTransport) channelDialer() {
 		default:
 			tunnelTCPConn, err := TcpDialer(c.ctx, c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 3)
 			if err != nil {
-				c.logger.Errorf("channel dialer: error dialing remote address %s: %v", c.config.RemoteAddr, err)
+				c.logger.Errorf("channel dialer: %v", err)
 				time.Sleep(c.config.RetryInterval)
 				continue
 			}
@@ -319,7 +319,7 @@ func (c *TcpTransport) tunnelDialer() {
 	// Dial to the tunnel server
 	tcpConn, err := TcpDialer(c.ctx, c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 3)
 	if err != nil {
-		c.logger.Error("failed to dial tunnel server: ", err)
+		c.logger.Error("tunnel server dialer: ", err)
 
 		return
 	}
@@ -364,7 +364,7 @@ func (c *TcpTransport) tunnelDialer() {
 func (c *TcpTransport) localDialer(tcpConn net.Conn, remoteAddr string, port int) {
 	localConnection, err := TcpDialer(c.ctx, remoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 1)
 	if err != nil {
-		c.logger.Errorf("failed to connect to local address %s: %v", remoteAddr, err)
+		c.logger.Errorf("local dialer: %v", err)
 		tcpConn.Close()
 		return
 	}

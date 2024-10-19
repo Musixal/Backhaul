@@ -129,7 +129,7 @@ func (c *WsTransport) channelDialer() {
 		default:
 			tunnelWSConn, err := WebSocketDialer(c.ctx, c.config.RemoteAddr, "/channel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode, 3)
 			if err != nil {
-				c.logger.Errorf("failed to dial websocket control channel: %v", err)
+				c.logger.Errorf("control channel dialer: %v", err)
 				time.Sleep(c.config.RetryInterval)
 				continue
 			}
@@ -286,7 +286,7 @@ func (c *WsTransport) tunnelDialer() {
 	// Dial to the tunnel server
 	tunnelConn, err := WebSocketDialer(c.ctx, c.config.RemoteAddr, "/tunnel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode, 3)
 	if err != nil {
-		c.logger.Errorf("failed to dial webSocket tunnel server: %v", err)
+		c.logger.Errorf("tunnel server dialer: %v", err)
 
 		return
 	}
@@ -337,7 +337,7 @@ func (c *WsTransport) tunnelDialer() {
 func (c *WsTransport) localDialer(tunnelCon *websocket.Conn, remoteAddr string, port int) {
 	localConn, err := TcpDialer(c.ctx, remoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 1)
 	if err != nil {
-		c.logger.Errorf("connecting to local address %s is not possible", remoteAddr)
+		c.logger.Errorf("local dialer: %v", err)
 		tunnelCon.Close()
 		return
 	}

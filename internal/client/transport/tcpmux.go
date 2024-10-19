@@ -141,7 +141,7 @@ func (c *TcpMuxTransport) channelDialer() {
 		default:
 			tunnelConn, err := TcpDialer(c.ctx, c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 3)
 			if err != nil {
-				c.logger.Errorf("channel dialer: error dialing remote address %s: %v", c.config.RemoteAddr, err)
+				c.logger.Errorf("channel dialer: %v", err)
 				time.Sleep(c.config.RetryInterval)
 				continue
 			}
@@ -328,7 +328,7 @@ func (c *TcpMuxTransport) tunnelDialer() {
 	// Dial to the tunnel server
 	tunnelConn, err := TcpDialer(c.ctx, c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 3)
 	if err != nil {
-		c.logger.Errorf("failed to dial tunnel server: %v", err)
+		c.logger.Errorf("tunnel server dialer: %v", err)
 
 		return
 	}
@@ -388,7 +388,7 @@ func (c *TcpMuxTransport) localDialer(stream *smux.Stream, remoteAddr string) {
 
 	localConnection, err := TcpDialer(c.ctx, resolvedAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 1)
 	if err != nil {
-		c.logger.Errorf("connecting to local address %s is not possible", remoteAddr)
+		c.logger.Errorf("local dialer: %v", err)
 		stream.Close()
 		return
 	}

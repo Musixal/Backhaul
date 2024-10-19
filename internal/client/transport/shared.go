@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"runtime"
@@ -68,15 +67,14 @@ func TcpDialer(ctx context.Context, address string, timeout time.Duration, keepA
 		backoff *= 2 // Exponential backoff (double the wait time after each failure)
 	}
 
-	return nil, fmt.Errorf("failed to dial TCP address %s after %d retries: %v", address, retries, err)
+	return nil, err
 }
 
 func attemptTcpDialer(ctx context.Context, address string, timeout time.Duration, keepAlive time.Duration, nodelay bool) (*net.TCPConn, error) {
 	//Resolve the address to a TCP address
 	tcpAddr, err := net.ResolveTCPAddr("tcp", address)
 	if err != nil {
-		log.Printf("DNS resolution failed: %v", err) // debug
-		return nil, fmt.Errorf("DNS resolution failed: %v", err)
+		return nil, fmt.Errorf("DNS resolution: %v", err)
 	}
 
 	// Options
@@ -89,7 +87,7 @@ func attemptTcpDialer(ctx context.Context, address string, timeout time.Duration
 	// Dial the TCP connection with a timeout
 	conn, err := dialer.DialContext(ctx, "tcp", tcpAddr.String())
 	if err != nil {
-		return nil, fmt.Errorf("TCP dialer failed: %v", err)
+		return nil, err
 	}
 
 	// Type assert the net.Conn to *net.TCPConn
@@ -162,7 +160,7 @@ func WebSocketDialer(ctx context.Context, addr string, path string, timeout time
 		backoff *= 2 // Exponential backoff (double the wait time after each failure)
 	}
 
-	return nil, fmt.Errorf("failed to dial WebSocket server after %d retries: %v", retries, err)
+	return nil, err
 }
 
 func attemptDialWebSocket(ctx context.Context, addr string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType) (*websocket.Conn, error) {
