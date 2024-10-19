@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/musix/backhaul/internal/utils"
@@ -31,6 +32,8 @@ type TcpMuxTransport struct {
 	controlChannel   net.Conn
 	usageMonitor     *web.Usage
 	restartMutex     sync.Mutex
+	streamCounter    int32
+	sessionCounter   int32
 }
 
 type TcpMuxConfig struct {
@@ -77,6 +80,8 @@ func NewTcpMuxServer(parentCtx context.Context, config *TcpMuxConfig, logger *lo
 		localChannel:     make(chan LocalTCPConn, config.ChannelSize),
 		reqNewConnChan:   make(chan struct{}, config.ChannelSize),
 		controlChannel:   nil, // will be set when a control connection is established
+		streamCounter:    0,
+		sessionCounter:   0,
 		usageMonitor:     web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
@@ -148,6 +153,8 @@ func (s *TcpMuxTransport) Restart() {
 	s.controlChannel = nil
 	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.config.Sniffer, &s.config.TunnelStatus, s.logger)
 	s.config.TunnelStatus = ""
+	s.streamCounter = 0
+	s.sessionCounter = 0
 
 	// set the log level again
 	s.logger.SetLevel(level)
@@ -510,63 +517,78 @@ func (s *TcpMuxTransport) acceptLocalConn(listener net.Listener, remoteAddr stri
 
 func (s *TcpMuxTransport) handleLoop() {
 	next := make(chan struct{})
+
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
 
 		case session := <-s.tunnelChannel:
+			// +1 for session counter
+			atomic.AddInt32(&s.sessionCounter, 1)
+
 			go s.handleSession(session, next)
-			<-next
+			<-next // wait for the signal to initiate new mux session
 		}
 	}
 }
 
 func (s *TcpMuxTransport) handleSession(session *smux.Session, next chan struct{}) {
 	done := make(chan struct{}, s.config.MuxCon)
-	counter := 0
 
 	for {
+		if atomic.LoadInt32(&s.streamCounter) >= atomic.LoadInt32(&s.sessionCounter)*int32(s.config.MuxCon) {
+			next <- struct{}{}
+
+			// Attempt to request a new connection
+			select {
+			case s.reqNewConnChan <- struct{}{}:
+			default:
+				s.logger.Warn("failed to request new connection. channel is full")
+			}
+		}
+		s.logger.Tracef("stream counter: %v, session counter: %v", atomic.LoadInt32(&s.streamCounter), atomic.LoadInt32(&s.sessionCounter))
+
+		// +1 for Muxed connections counter
+		done <- struct{}{}
+
 		select {
 		case <-s.ctx.Done():
-			for counter > 0 { // Ensure all goroutines finish before returning
-				<-done
-				counter--
-			}
+			session.Close()
 			return
 
 		case incomingConn := <-s.localChannel:
+			// +1 for stream counter
+			atomic.AddInt32(&s.streamCounter, 1)
+
 			stream, err := session.OpenStream()
 			if err != nil {
-				s.handleSessionError(session, &incomingConn, next, done, counter, err)
+				s.handleSessionError(session, &incomingConn, next, done, err)
 				return
 			}
 
 			// Send the target port over the tunnel connection
 			if err := utils.SendBinaryString(stream, incomingConn.remoteAddr); err != nil {
-				s.handleSessionError(session, &incomingConn, next, done, counter, err)
+				s.handleSessionError(session, &incomingConn, next, done, err)
 				return
 			}
 
 			// Handle data exchange between connections
 			go func() {
 				utils.TCPConnectionHandler(stream, incomingConn.conn, s.logger, s.usageMonitor, incomingConn.conn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
-				done <- struct{}{}
+				atomic.AddInt32(&s.streamCounter, -1)
+				<-done // read signal from the channel
 			}()
-
-			counter++
-
-			// Check if the maximum number of multiplexed connections is reached
-			if counter == s.config.MuxCon {
-				s.finalizeSession(session, next, done, counter)
-				return
-			}
 		}
 	}
 }
 
-func (s *TcpMuxTransport) handleSessionError(session *smux.Session, incomingConn *LocalTCPConn, next chan struct{}, done chan struct{}, counter int, err error) {
+func (s *TcpMuxTransport) handleSessionError(session *smux.Session, incomingConn *LocalTCPConn, next chan struct{}, done chan struct{}, err error) {
 	s.logger.Errorf("failed to handle session: %v", err)
+
+	// decrease values
+	atomic.AddInt32(&s.streamCounter, -1)
+	atomic.AddInt32(&s.sessionCounter, -1)
 
 	// Put connection back to local channel
 	s.localChannel <- *incomingConn
@@ -581,34 +603,23 @@ func (s *TcpMuxTransport) handleSessionError(session *smux.Session, incomingConn
 		s.logger.Warn("request new connection channel is full")
 	}
 
-	// Wait for all active handlers to finish
-	for i := 0; i < counter; i++ {
-		<-done
+	// Wait for the done channel to become empty, with a timeout of 10 seconds
+	timeout := time.After(10 * time.Second)
+
+loop:
+	for {
+		select {
+		case <-timeout:
+			break loop
+
+		default:
+			if len(done) == 0 {
+				break loop
+			}
+			time.Sleep(1 * time.Second)
+		}
 	}
 
 	// Ensure session is closed
-	if closeErr := session.Close(); closeErr != nil {
-		s.logger.Errorf("failed to close session: %v", closeErr)
-	}
-}
-
-func (s *TcpMuxTransport) finalizeSession(session *smux.Session, next chan struct{}, done chan struct{}, counter int) {
-	next <- struct{}{}
-
-	// Attempt to request a new connection
-	select {
-	case s.reqNewConnChan <- struct{}{}:
-	default:
-		s.logger.Warn("request new connection channel is full")
-	}
-
-	// Wait for all active handlers to finish
-	for i := 0; i < counter; i++ {
-		<-done
-	}
-
-	// Ensure session is closed after completing the mux session
-	if err := session.Close(); err != nil {
-		s.logger.Errorf("failed to close session after session completed: %v", err)
-	}
+	session.Close()
 }
