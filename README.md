@@ -127,6 +127,7 @@ To start using the solution, you'll need to configure both server and client com
    ```toml
    [client]  # Behind NAT, firewall-blocked
    remote_addr = "0.0.0.0:3080"  # Server address and port (mandatory).
+   edge_ip = "188.114.96.0"      # Edge IP used for CDN connection, specifically for WebSocket-based transports.(Optional, default none)
    transport = "tcp"             # Protocol to use ("tcp", "tcpmux", "ws", "wss", "wsmux", "wssmux". mandatory).
    token = "your_token"          # Authentication token for secure communication (optional).
    connection_pool = 8           # Number of pre-established connections.(optional, default: 8).
@@ -202,38 +203,6 @@ To start using the solution, you'll need to configure both server and client com
    
    `nodelay`: Refers to a TCP socket option (TCP_NODELAY) that improve the latency but decrease the bandwidth
 
-#### UDP Configuration
-* **Server**:
-
-   ```toml
-   [server]
-   bind_addr = "0.0.0.0:3080"
-   transport = "udp"
-   token = "your_token"
-   heartbeat = 20 
-   channel_size = 2048
-   sniffer = false 
-   web_port = 2060
-   sniffer_log = "/root/backhaul.json"
-   log_level = "info"
-   ports = []
-   ```
-* **Client**:
-
-   ```toml
-   [client]
-   remote_addr = "0.0.0.0:3080"
-   transport = "udp"
-   token = "your_token" 
-   connection_pool = 8
-   aggressive_pool = false
-   retry_interval = 3
-   sniffer = false
-   web_port = 2060 
-   sniffer_log = "/root/backhaul.json"
-   log_level = "info"
-
-   ```
 
 #### TCP Multiplexing Configuration
 * **Server**:
@@ -287,6 +256,39 @@ To start using the solution, you'll need to configure both server and client com
    * Refer to TCP configuration for more information.
 
 
+#### UDP Configuration
+* **Server**:
+
+   ```toml
+   [server]
+   bind_addr = "0.0.0.0:3080"
+   transport = "udp"
+   token = "your_token"
+   heartbeat = 20 
+   channel_size = 2048
+   sniffer = false 
+   web_port = 2060
+   sniffer_log = "/root/backhaul.json"
+   log_level = "info"
+   ports = []
+   ```
+* **Client**:
+
+   ```toml
+   [client]
+   remote_addr = "0.0.0.0:3080"
+   transport = "udp"
+   token = "your_token" 
+   connection_pool = 8
+   aggressive_pool = false
+   retry_interval = 3
+   sniffer = false
+   web_port = 2060 
+   sniffer_log = "/root/backhaul.json"
+   log_level = "info"
+
+   ```
+   
 #### WebSocket Configuration
 * **Server**:
 
@@ -311,6 +313,7 @@ To start using the solution, you'll need to configure both server and client com
    ```toml
    [client]
    remote_addr = "0.0.0.0:8080"
+   edge_ip = "" 
    transport = "ws"
    token = "your_token" 
    connection_pool = 8
@@ -354,6 +357,7 @@ To start using the solution, you'll need to configure both server and client com
    ```toml
    [client]
    remote_addr = "0.0.0.0:8443"
+   edge_ip = "" 
    transport = "wss"
    token = "your_token" 
    connection_pool = 8
@@ -401,6 +405,7 @@ To start using the solution, you'll need to configure both server and client com
    ```toml
    [client]
    remote_addr = "0.0.0.0:3080"
+   edge_ip = "" 
    transport = "wsmux"
    token = "your_token" 
    connection_pool = 8
@@ -449,6 +454,7 @@ To start using the solution, you'll need to configure both server and client com
    ```toml
    [client]
    remote_addr = "0.0.0.0:443"
+   edge_ip = "" 
    transport = "wssmux"
    token = "your_token" 
    keepalive_period = 75

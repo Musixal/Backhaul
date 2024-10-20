@@ -135,7 +135,7 @@ func ReusePortControl(network, address string, s syscall.RawConn) error {
 	return controlErr
 }
 
-func WebSocketDialer(ctx context.Context, addr string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType, retry int) (*websocket.Conn, error) {
+func WebSocketDialer(ctx context.Context, addr string, edgeIP string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType, retry int) (*websocket.Conn, error) {
 	var tunnelWSConn *websocket.Conn
 	var err error
 
@@ -144,7 +144,7 @@ func WebSocketDialer(ctx context.Context, addr string, path string, timeout time
 
 	for i := 0; i < retries; i++ {
 		// Attempt to dial the WebSocket
-		tunnelWSConn, err = attemptDialWebSocket(ctx, addr, path, timeout, keepalive, nodelay, token, mode)
+		tunnelWSConn, err = attemptDialWebSocket(ctx, addr, edgeIP, path, timeout, keepalive, nodelay, token, mode)
 		if err == nil {
 			// If successful, return the connection
 			return tunnelWSConn, nil
@@ -163,13 +163,25 @@ func WebSocketDialer(ctx context.Context, addr string, path string, timeout time
 	return nil, err
 }
 
-func attemptDialWebSocket(ctx context.Context, addr string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType) (*websocket.Conn, error) {
+func attemptDialWebSocket(ctx context.Context, addr string, edgeIP string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType) (*websocket.Conn, error) {
 	// Setup headers with authorization
 	headers := http.Header{}
 	headers.Add("Authorization", fmt.Sprintf("Bearer %v", token))
 
 	var wsURL string
 	dialer := websocket.Dialer{}
+
+	// Handle edgeIP assignment
+	if edgeIP != "" {
+		_, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid address format, failed to parse: %w", err)
+		}
+
+		edgeIP = fmt.Sprintf("%s:%s", edgeIP, port)
+	} else {
+		edgeIP = addr
+	}
 
 	if mode == config.WS || mode == config.WSMUX {
 		wsURL = fmt.Sprintf("ws://%s%s", addr, path)
@@ -178,7 +190,7 @@ func attemptDialWebSocket(ctx context.Context, addr string, path string, timeout
 			EnableCompression: true,
 			HandshakeTimeout:  45 * time.Second, // default handshake timeout
 			NetDial: func(_, addr string) (net.Conn, error) {
-				conn, err := TcpDialer(ctx, addr, timeout, keepalive, nodelay, 1)
+				conn, err := TcpDialer(ctx, edgeIP, timeout, keepalive, nodelay, 1)
 				if err != nil {
 					return nil, err
 				}
@@ -198,7 +210,7 @@ func attemptDialWebSocket(ctx context.Context, addr string, path string, timeout
 			TLSClientConfig:   tlsConfig,        // Pass the insecure TLS config here
 			HandshakeTimeout:  45 * time.Second, // default handshake timeout
 			NetDial: func(_, addr string) (net.Conn, error) {
-				conn, err := TcpDialer(ctx, addr, timeout, keepalive, nodelay, 1)
+				conn, err := TcpDialer(ctx, edgeIP, timeout, keepalive, nodelay, 1)
 				if err != nil {
 					return nil, err
 				}

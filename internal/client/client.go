@@ -79,25 +79,26 @@ func (c *Client) Start() {
 			Sniffer:          c.config.Sniffer,
 			WebPort:          c.config.WebPort,
 			SnifferLog:       c.config.SnifferLog,
-			AggressivePool: c.config.AggressivePool,
+			AggressivePool:   c.config.AggressivePool,
 		}
 		tcpMuxClient := transport.NewMuxClient(c.ctx, tcpMuxConfig, c.logger)
 		go tcpMuxClient.Start()
 
 	} else if c.config.Transport == config.WS || c.config.Transport == config.WSS {
 		WsConfig := &transport.WsConfig{
-			RemoteAddr:    c.config.RemoteAddr,
-			Nodelay:       c.config.Nodelay,
-			KeepAlive:     time.Duration(c.config.Keepalive) * time.Second,
-			RetryInterval: time.Duration(c.config.RetryInterval) * time.Second,
-			DialTimeOut:   time.Duration(c.config.DialTimeout) * time.Second,
-			ConnPoolSize:  c.config.ConnectionPool,
-			Token:         c.config.Token,
-			Sniffer:       c.config.Sniffer,
-			WebPort:       c.config.WebPort,
-			SnifferLog:    c.config.SnifferLog,
-			Mode:          c.config.Transport,
+			RemoteAddr:     c.config.RemoteAddr,
+			Nodelay:        c.config.Nodelay,
+			KeepAlive:      time.Duration(c.config.Keepalive) * time.Second,
+			RetryInterval:  time.Duration(c.config.RetryInterval) * time.Second,
+			DialTimeOut:    time.Duration(c.config.DialTimeout) * time.Second,
+			ConnPoolSize:   c.config.ConnectionPool,
+			Token:          c.config.Token,
+			Sniffer:        c.config.Sniffer,
+			WebPort:        c.config.WebPort,
+			SnifferLog:     c.config.SnifferLog,
+			Mode:           c.config.Transport,
 			AggressivePool: c.config.AggressivePool,
+			EdgeIP:         c.config.EdgeIP,
 		}
 		WsClient := transport.NewWSClient(c.ctx, WsConfig, c.logger)
 		go WsClient.Start()
@@ -119,7 +120,8 @@ func (c *Client) Start() {
 			WebPort:          c.config.WebPort,
 			SnifferLog:       c.config.SnifferLog,
 			Mode:             c.config.Transport,
-			AggressivePool: c.config.AggressivePool,
+			AggressivePool:   c.config.AggressivePool,
+			EdgeIP:           c.config.EdgeIP,
 		}
 		wsMuxClient := transport.NewWSMuxClient(c.ctx, wsMuxConfig, c.logger)
 		go wsMuxClient.Start()
@@ -143,14 +145,14 @@ func (c *Client) Start() {
 
 	} else if c.config.Transport == config.UDP {
 		udpConfig := &transport.UdpConfig{
-			RemoteAddr:    c.config.RemoteAddr,
-			RetryInterval: time.Duration(c.config.RetryInterval) * time.Second,
-			DialTimeOut:   time.Duration(c.config.DialTimeout) * time.Second,
-			ConnPoolSize:  c.config.ConnectionPool,
-			Token:         c.config.Token,
-			Sniffer:       c.config.Sniffer,
-			WebPort:       c.config.WebPort,
-			SnifferLog:    c.config.SnifferLog,
+			RemoteAddr:     c.config.RemoteAddr,
+			RetryInterval:  time.Duration(c.config.RetryInterval) * time.Second,
+			DialTimeOut:    time.Duration(c.config.DialTimeout) * time.Second,
+			ConnPoolSize:   c.config.ConnectionPool,
+			Token:          c.config.Token,
+			Sniffer:        c.config.Sniffer,
+			WebPort:        c.config.WebPort,
+			SnifferLog:     c.config.SnifferLog,
 			AggressivePool: c.config.AggressivePool,
 		}
 		udpClient := transport.NewUDPClient(c.ctx, udpConfig, c.logger)
