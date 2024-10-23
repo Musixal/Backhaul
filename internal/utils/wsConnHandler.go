@@ -52,7 +52,7 @@ func transferWebSocketToTCP(wsConn *websocket.Conn, tcpConn net.Conn, logger *lo
 			}
 			logger.Tracef("transferred data from WebSocket to TCP: %d bytes", w)
 			if sniffer {
-				go usage.AddOrUpdatePort(remotePort, uint64(w))
+				usage.AddOrUpdatePort(remotePort, uint64(w))
 			}
 		}
 	}
@@ -90,7 +90,7 @@ func transferTCPToWebSocket(tcpConn net.Conn, wsConn *websocket.Conn, logger *lo
 
 		logger.Tracef("transferred data from TCP to WebSocket: %d bytes", n)
 		if sniffer {
-			go usage.AddOrUpdatePort(remotePort, uint64(n))
+			usage.AddOrUpdatePort(remotePort, uint64(n))
 		}
 	}
 }
