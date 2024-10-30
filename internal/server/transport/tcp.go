@@ -493,7 +493,7 @@ func (s *TcpTransport) acceptLocalConn(listener net.Listener, remoteAddr string)
 			}
 
 			select {
-			case s.localChannel <- LocalTCPConn{conn: conn, remoteAddr: remoteAddr}:
+			case s.localChannel <- LocalTCPConn{conn: conn, remoteAddr: remoteAddr, timeCreated: time.Now().UnixMilli()}:
 
 				select {
 				case s.reqNewConnChan <- struct{}{}:
@@ -521,6 +521,12 @@ func (s *TcpTransport) handleLoop() {
 		case localConn := <-s.localChannel:
 		loop:
 			for {
+				if time.Now().UnixMilli()-localConn.timeCreated > 3000 { // 3000ms
+					s.logger.Debugf("timeouted local connection: %d ms", time.Now().UnixMilli()-localConn.timeCreated)
+					localConn.conn.Close()
+					break loop
+				}
+
 				select {
 				case <-s.ctx.Done():
 					return

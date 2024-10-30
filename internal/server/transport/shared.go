@@ -14,8 +14,9 @@ type TunnelChannel struct { // for websocket
 }
 
 type LocalTCPConn struct {
-	conn       net.Conn
-	remoteAddr string
+	conn        net.Conn
+	remoteAddr  string
+	timeCreated int64
 }
 
 type LocalAcceptUDPConn struct {

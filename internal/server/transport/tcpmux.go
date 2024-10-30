@@ -502,7 +502,7 @@ func (s *TcpMuxTransport) acceptLocalConn(listener net.Listener, remoteAddr stri
 			}
 
 			select {
-			case s.localChannel <- LocalTCPConn{conn: conn, remoteAddr: remoteAddr}:
+			case s.localChannel <- LocalTCPConn{conn: conn, remoteAddr: remoteAddr, timeCreated: time.Now().UnixMilli()}:
 				s.logger.Debugf("accepted incoming TCP connection from %s", tcpConn.RemoteAddr().String())
 
 			default: // channel is full, discard the connection
@@ -549,15 +549,21 @@ func (s *TcpMuxTransport) handleSession(session *smux.Session, next chan struct{
 		}
 		s.logger.Tracef("stream counter: %v, session counter: %v", atomic.LoadInt32(&s.streamCounter), atomic.LoadInt32(&s.sessionCounter))
 
-		// +1 for Muxed connections counter
-		done <- struct{}{}
-
 		select {
 		case <-s.ctx.Done():
 			session.Close()
 			return
 
 		case incomingConn := <-s.localChannel:
+			if time.Now().UnixMilli()-incomingConn.timeCreated > 3000 { // 3000ms
+				s.logger.Debugf("timeouted local connection: %d ms", time.Now().UnixMilli()-incomingConn.timeCreated)
+				incomingConn.conn.Close()
+				continue
+			}
+
+			// +1 for mux connection counter
+			done <- struct{}{}
+
 			// +1 for stream counter
 			atomic.AddInt32(&s.streamCounter, 1)
 

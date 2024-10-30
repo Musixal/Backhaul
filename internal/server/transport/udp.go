@@ -522,7 +522,7 @@ func (s *UdpTransport) localListener(localAddr, remoteAddr string) {
 
 				// Build the UDP connection object
 				newUDPConn := LocalUDPConn{
-					timeCreated: time.Now().UnixNano(), // Just for debugging
+					timeCreated: time.Now().UnixMilli(), // Just for debugging
 					payload:     payloadChan,
 					remoteAddr:  remoteAddr,
 					listener:    listener,
@@ -568,6 +568,11 @@ func (s *UdpTransport) handleLoop(udpChan chan *LocalUDPConn, activeConnections 
 		case <-s.ctx.Done():
 			return
 		case localConn := <-udpChan:
+			if time.Now().UnixMilli()-localConn.timeCreated > 3000 { // 3000ms
+				s.logger.Debugf("timeouted local connection: %d ms", time.Now().UnixMilli()-localConn.timeCreated)
+				continue
+			}
+
 		loop:
 			for {
 				select {
