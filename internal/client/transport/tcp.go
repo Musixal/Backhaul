@@ -122,7 +122,8 @@ func (c *TcpTransport) channelDialer() {
 		case <-c.ctx.Done():
 			return
 		default:
-			tunnelTCPConn, err := TcpDialer(c.ctx, c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 3)
+			//set default behaviour of control channel to nodelay, also using default buffer parameters
+			tunnelTCPConn, err := TcpDialer(c.ctx, c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, true, 3, 0, 0)
 			if err != nil {
 				c.logger.Errorf("channel dialer: %v", err)
 				time.Sleep(c.config.RetryInterval)
@@ -317,7 +318,9 @@ func (c *TcpTransport) tunnelDialer() {
 	c.logger.Debugf("initiating new connection to tunnel server at %s", c.config.RemoteAddr)
 
 	// Dial to the tunnel server
-	tcpConn, err := TcpDialer(c.ctx, c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 3)
+	// Based on calculations 1MB of buffer on 80ms RTT will have about 100Mbit Bandwidth per connection,
+	// this is enough to get 800Mbit/s on speedtest and also not having too much buffer to bufferbloat
+	tcpConn, err := TcpDialer(c.ctx, c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 3, 1024*1024, 1024*1024)
 	if err != nil {
 		c.logger.Error("tunnel server dialer: ", err)
 
@@ -362,7 +365,8 @@ func (c *TcpTransport) tunnelDialer() {
 }
 
 func (c *TcpTransport) localDialer(tcpConn net.Conn, remoteAddr string, port int) {
-	localConnection, err := TcpDialer(c.ctx, remoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 1)
+	// Set Default S,R buffer to 32kb also enabling nodelay on send side of local network ( receive side should be handled by xray)
+	localConnection, err := TcpDialer(c.ctx, remoteAddr, c.config.DialTimeOut, c.config.KeepAlive, true, 1, 32*1024, 32*1024)
 	if err != nil {
 		c.logger.Errorf("local dialer: %v", err)
 		tcpConn.Close()
