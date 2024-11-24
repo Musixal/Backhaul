@@ -481,6 +481,16 @@ func (s *WsTransport) acceptLocalConn(listener net.Listener, remoteAddr string) 
 				}
 			}
 
+			// Set keep-alive settings
+			if err := tcpConn.SetKeepAlive(true); err != nil {
+				s.logger.Warnf("failed to enable TCP keep-alive for %s: %v", tcpConn.RemoteAddr().String(), err)
+			} else {
+				s.logger.Tracef("TCP keep-alive enabled for %s", tcpConn.RemoteAddr().String())
+			}
+			if err := tcpConn.SetKeepAlivePeriod(s.config.KeepAlive); err != nil {
+				s.logger.Warnf("failed to set TCP keep-alive period for %s: %v", tcpConn.RemoteAddr().String(), err)
+			}
+
 			select {
 			case s.localChannel <- LocalTCPConn{conn: conn, remoteAddr: remoteAddr, timeCreated: time.Now().UnixMilli()}:
 
