@@ -240,6 +240,18 @@ func (s *WsTransport) tunnelListener() {
 					return
 				}
 
+				//FORCE CONTROL CHANNEL TO USE NODELAY MODE
+				tcpUnderlyingConn, ok := conn.NetConn().(*net.TCPConn)
+				if !ok {
+					s.logger.Errorf("failed to access underlying connection inside websocket")
+					return
+				}
+				if tcpUnderlyingConn != nil {
+					if err := tcpUnderlyingConn.SetNoDelay(true); err != nil {
+						s.logger.Warnf("unable to set nodelay for underlying websocket channel")
+					}
+				}
+
 				s.controlChannel = conn
 
 				s.logger.Info("control channel established successfully")
@@ -261,6 +273,22 @@ func (s *WsTransport) tunnelListener() {
 				s.config.TunnelStatus = fmt.Sprintf("Connected (%s)", s.config.Mode)
 
 			} else if r.URL.Path == "/tunnel" {
+
+				if !s.config.Nodelay {
+					tcpUnderlyingConn, ok := conn.NetConn().(*net.TCPConn)
+					if !ok {
+						s.logger.Errorf("failed to access underlying tcp conn in websocket")
+						return
+					}
+					if tcpUnderlyingConn != nil {
+						if err := tcpUnderlyingConn.SetNoDelay(s.config.Nodelay); err != nil {
+							s.logger.Warnf("failed to set TCP_NODELAY for %s: %v", tcpUnderlyingConn.RemoteAddr().String(), err)
+						}
+					}
+				} else {
+					s.logger.Tracef("TCP_NODELAY disabled for %s", conn.RemoteAddr().String())
+				}
+
 				wsConn := TunnelChannel{
 					conn: conn,
 					ping: make(chan struct{}),
