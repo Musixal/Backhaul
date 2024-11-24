@@ -183,6 +183,16 @@ func (s *TcpTransport) channelHandshake() {
 				continue
 			}
 
+			//FORCE CONTROL CHANNEL TO BE TCP_NODELAY
+			tcpConn, ok := conn.(*net.TCPConn)
+			if !ok {
+				conn.Close()
+				continue
+			}
+			if err := tcpConn.SetNoDelay(true); err != nil {
+				s.logger.Warnf("failed to set TCP_NODELAY for Control Channel %s: %v", tcpConn.RemoteAddr().String(), err)
+			}
+
 			s.controlChannel = conn
 
 			s.logger.Info("control channel successfully established.")
