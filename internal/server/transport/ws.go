@@ -252,6 +252,16 @@ func (s *WsTransport) tunnelListener() {
 					}
 				}
 
+				// Set keep-alive settings
+				if err := tcpUnderlyingConn.SetKeepAlive(true); err != nil {
+					s.logger.Warnf("failed to enable TCP keep-alive for %s: %v", tcpUnderlyingConn.RemoteAddr().String(), err)
+				} else {
+					s.logger.Tracef("TCP keep-alive enabled for %s", tcpUnderlyingConn.RemoteAddr().String())
+				}
+				if err := tcpUnderlyingConn.SetKeepAlivePeriod(s.config.KeepAlive); err != nil {
+					s.logger.Warnf("failed to set TCP keep-alive period for %s: %v", tcpUnderlyingConn.RemoteAddr().String(), err)
+				}
+
 				s.controlChannel = conn
 
 				s.logger.Info("control channel established successfully")
@@ -274,12 +284,13 @@ func (s *WsTransport) tunnelListener() {
 
 			} else if r.URL.Path == "/tunnel" {
 
+				tcpUnderlyingConn, ok := conn.NetConn().(*net.TCPConn)
+				if !ok {
+					s.logger.Errorf("failed to access underlying tcp conn in websocket")
+					return
+				}
+
 				if !s.config.Nodelay {
-					tcpUnderlyingConn, ok := conn.NetConn().(*net.TCPConn)
-					if !ok {
-						s.logger.Errorf("failed to access underlying tcp conn in websocket")
-						return
-					}
 					if tcpUnderlyingConn != nil {
 						if err := tcpUnderlyingConn.SetNoDelay(s.config.Nodelay); err != nil {
 							s.logger.Warnf("failed to set TCP_NODELAY for %s: %v", tcpUnderlyingConn.RemoteAddr().String(), err)
@@ -287,6 +298,16 @@ func (s *WsTransport) tunnelListener() {
 					}
 				} else {
 					s.logger.Tracef("TCP_NODELAY disabled for %s", conn.RemoteAddr().String())
+				}
+
+				// Set keep-alive settings
+				if err := tcpUnderlyingConn.SetKeepAlive(true); err != nil {
+					s.logger.Warnf("failed to enable TCP keep-alive for %s: %v", tcpUnderlyingConn.RemoteAddr().String(), err)
+				} else {
+					s.logger.Tracef("TCP keep-alive enabled for %s", tcpUnderlyingConn.RemoteAddr().String())
+				}
+				if err := tcpUnderlyingConn.SetKeepAlivePeriod(s.config.KeepAlive); err != nil {
+					s.logger.Warnf("failed to set TCP keep-alive period for %s: %v", tcpUnderlyingConn.RemoteAddr().String(), err)
 				}
 
 				wsConn := TunnelChannel{

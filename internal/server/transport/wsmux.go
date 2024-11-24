@@ -309,12 +309,12 @@ func (s *WsMuxTransport) tunnelListener() {
 			} else if r.URL.Path == "/tunnel" {
 
 				tcpUnderlyingConn, ok := conn.NetConn().(*net.TCPConn)
+				if !ok {
+					s.logger.Errorf("failed to access underlying tcp conn in websocket")
+					return
+				}
 
 				if !s.config.Nodelay {
-					if !ok {
-						s.logger.Errorf("failed to access underlying tcp conn in websocket")
-						return
-					}
 					if tcpUnderlyingConn != nil {
 						if err := tcpUnderlyingConn.SetNoDelay(s.config.Nodelay); err != nil {
 							s.logger.Warnf("failed to set TCP_NODELAY for %s: %v", tcpUnderlyingConn.RemoteAddr().String(), err)
