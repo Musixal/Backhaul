@@ -128,7 +128,7 @@ func (c *WsTransport) channelDialer() {
 		case <-c.ctx.Done():
 			return
 		default:
-			tunnelWSConn, err := WebSocketDialer(c.ctx, c.config.RemoteAddr, c.config.EdgeIP, "/channel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode, 3)
+			tunnelWSConn, err := WebSocketDialer(c.ctx, c.config.RemoteAddr, c.config.EdgeIP, "/channel", c.config.DialTimeOut, c.config.KeepAlive, true, c.config.Token, c.config.Mode, 3, 0, 0)
 			if err != nil {
 				c.logger.Errorf("control channel dialer: %v", err)
 				time.Sleep(c.config.RetryInterval)
@@ -285,7 +285,7 @@ func (c *WsTransport) tunnelDialer() {
 	c.logger.Debugf("initiating new websocket tunnel connection to address %s", c.config.RemoteAddr)
 
 	// Dial to the tunnel server
-	tunnelConn, err := WebSocketDialer(c.ctx, c.config.RemoteAddr, c.config.EdgeIP, "/tunnel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode, 3)
+	tunnelConn, err := WebSocketDialer(c.ctx, c.config.RemoteAddr, c.config.EdgeIP, "/tunnel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode, 3, 1024*1024, 1024*1024)
 	if err != nil {
 		c.logger.Errorf("tunnel server dialer: %v", err)
 
@@ -336,7 +336,7 @@ func (c *WsTransport) tunnelDialer() {
 }
 
 func (c *WsTransport) localDialer(tunnelCon *websocket.Conn, remoteAddr string, port int) {
-	localConn, err := TcpDialer(c.ctx, remoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 1)
+	localConn, err := TcpDialer(c.ctx, remoteAddr, c.config.DialTimeOut, c.config.KeepAlive, true, 1, 32*1024, 32*1024)
 	if err != nil {
 		c.logger.Errorf("local dialer: %v", err)
 		tunnelCon.Close()
