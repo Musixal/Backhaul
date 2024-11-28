@@ -14,6 +14,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/musix/backhaul/internal/config"
+	"golang.org/x/exp/rand"
 )
 
 func ResolveRemoteAddr(remoteAddr string) (int, string, error) {
@@ -191,9 +192,14 @@ func WebSocketDialer(ctx context.Context, addr string, edgeIP string, path strin
 }
 
 func attemptDialWebSocket(ctx context.Context, addr string, edgeIP string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType, SO_RCVBUF int, SO_SNDBUF int) (*websocket.Conn, error) {
-	// Setup headers with authorization
+	// Generate a random X-user-id
+	rand.Seed(uint64(time.Now().UnixNano()))
+	randomUserID := rand.Int31() // Generate a random int64 number
+
+	// Setup headers with authorization and X-user-id
 	headers := http.Header{}
 	headers.Add("Authorization", fmt.Sprintf("Bearer %v", token))
+	headers.Add("X-User-Id", fmt.Sprintf("%d", randomUserID))
 
 	var wsURL string
 	dialer := websocket.Dialer{}
@@ -208,6 +214,11 @@ func attemptDialWebSocket(ctx context.Context, addr string, edgeIP string, path 
 		edgeIP = fmt.Sprintf("%s:%s", edgeIP, port)
 	} else {
 		edgeIP = addr
+	}
+
+	// path generation
+	if path != "/channel" {
+		path = fmt.Sprintf("%s/%s", path, strconv.Itoa(int(randomUserID)))
 	}
 
 	if mode == config.WS || mode == config.WSMUX {
