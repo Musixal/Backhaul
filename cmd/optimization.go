@@ -33,7 +33,7 @@ func ApplyTCPTuning() {
 		for _, cmd := range commands {
 			err := exec.Command(cmd[0], cmd[1:]...).Run()
 			if err != nil {
-				logger.Errorf("Failed to apply TCP tuning: %v", err)
+				logger.Errorf("Failed to apply TCP tuning: %s", cmd)
 			} else {
 				logger.Debugf("Successfully applied: %s", cmd)
 			}
