@@ -239,7 +239,6 @@ func (s *WsTransport) tunnelListener() {
 					go s.Restart()
 					return
 				}
-
 				s.controlChannel = conn
 
 				s.logger.Info("control channel established successfully")
@@ -260,7 +259,7 @@ func (s *WsTransport) tunnelListener() {
 
 				s.config.TunnelStatus = fmt.Sprintf("Connected (%s)", s.config.Mode)
 
-			} else if r.URL.Path == "/tunnel" {
+			} else if strings.HasPrefix(r.URL.Path, "/tunnel") {
 				wsConn := TunnelChannel{
 					conn: conn,
 					ping: make(chan struct{}),

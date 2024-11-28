@@ -284,7 +284,7 @@ func (s *WsMuxTransport) tunnelListener() {
 
 				s.config.TunnelStatus = fmt.Sprintf("Connected (%s)", s.config.Mode)
 
-			} else if r.URL.Path == "/tunnel" {
+			} else if strings.HasPrefix(r.URL.Path, "/tunnel") {
 				session, err := smux.Client(conn.NetConn(), s.smuxConfig)
 				if err != nil {
 					s.logger.Errorf("failed to create MUX session for connection %s: %v", conn.RemoteAddr().String(), err)
