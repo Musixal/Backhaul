@@ -166,9 +166,8 @@ func (c *Client) Start() {
 
 	c.logger.Info("all workers stopped successfully")
 
-	// supress other logs
+	// suppress other logs
 	c.logger.SetLevel(logrus.FatalLevel)
-
 }
 func (c *Client) Stop() {
 	if c.cancel != nil {

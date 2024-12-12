@@ -167,7 +167,7 @@ func (s *Server) Start() {
 
 	s.logger.Info("all workers stopped successfully")
 
-	// supress other logs
+	// suppress other logs
 	s.logger.SetLevel(logrus.FatalLevel)
 }
 

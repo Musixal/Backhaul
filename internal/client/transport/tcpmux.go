@@ -367,10 +367,8 @@ func (c *TcpMuxTransport) handleSession(tunnelConn net.Conn) {
 			remoteAddr, err := utils.ReceiveBinaryString(stream)
 			if err != nil {
 				c.logger.Errorf("unable to get port from stream connection %s: %v", tunnelConn.RemoteAddr().String(), err)
-				if err := session.Close(); err != nil {
-					c.logger.Errorf("failed to close mux stream: %v", err)
-				}
-				return
+				stream.Close()
+				continue
 			}
 
 			go c.localDialer(stream, remoteAddr)
