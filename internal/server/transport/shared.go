@@ -42,5 +42,5 @@ type TunnelUDPConn struct {
 	addr        *net.UDPAddr
 	listener    *net.UDPConn
 	ping        chan struct{}
-	mu          *sync.Mutex //mutex for ping chanel
+	mu          *sync.Mutex //mutex for ping channel
 }

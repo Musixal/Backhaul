@@ -350,18 +350,18 @@ func (c *TcpTransport) tunnelDialer() {
 		return
 	}
 
-	if transport == utils.SG_TCP {
+	switch transport {
+	case utils.SG_TCP:
 		// Dial local server using the received address
 		c.localDialer(tcpConn, resolvedAddr, port)
 
-	} else if transport == utils.SG_UDP {
+	case utils.SG_UDP:
 		UDPDialer(tcpConn, resolvedAddr, c.logger, c.usageMonitor, port, c.config.Sniffer)
 
-	} else {
+	default:
 		c.logger.Error("undefined transport. close the connection.")
 		tcpConn.Close()
 	}
-
 }
 
 func (c *TcpTransport) localDialer(tcpConn net.Conn, remoteAddr string, port int) {
