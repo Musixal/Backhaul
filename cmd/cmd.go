@@ -15,7 +15,7 @@ var (
 	logger = utils.NewLogger("info")
 )
 
-func Run(configPath string, parentctx context.Context) {
+func Run(configPath string, ctx context.Context) {
 	// Load and parse the configuration file
 	cfg, err := loadConfig(configPath)
 	if err != nil {
@@ -25,12 +25,9 @@ func Run(configPath string, parentctx context.Context) {
 	// Apply default values to the configuration
 	applyDefaults(cfg)
 
-	// Create a context for graceful shutdown handling
-	ctx, cancel := context.WithCancel(parentctx)
-	defer cancel()
-
 	// Determine whether to run as a server or client
-	if cfg.Server.BindAddr != "" {
+	switch {
+	case cfg.Server.BindAddr != "":
 		srv := server.NewServer(&cfg.Server, ctx) // server
 		go srv.Start()
 
@@ -38,8 +35,7 @@ func Run(configPath string, parentctx context.Context) {
 		<-ctx.Done()
 		srv.Stop()
 		logger.Println("shutting down server...")
-
-	} else if cfg.Client.RemoteAddr != "" {
+	case cfg.Client.RemoteAddr != "":
 		clnt := client.NewClient(&cfg.Client, ctx) // client
 		go clnt.Start()
 
@@ -47,8 +43,10 @@ func Run(configPath string, parentctx context.Context) {
 		<-ctx.Done()
 		clnt.Stop()
 		logger.Println("shutting down client...")
-	} else {
+
+	default:
 		logger.Fatalf("neither server nor client configuration is properly set.")
+
 	}
 }
 
