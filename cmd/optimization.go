@@ -25,8 +25,8 @@ func ApplyTCPTuning() {
 			{"sysctl", "-w", "net.ipv4.tcp_notsent_lowat=4096"},         // WE DO NOT LET more than 4096 bytes of data goes to buffer if the unsended data still is in the buffer
 			{"sysctl", "-w", "net.core.rmem_default=262144"},            // Set Default Receive Memory in order to receive data with better pace and not start with minimum of 16k
 			{"sysctl", "-w", "net.core.wmem_default=262144"},
-			{"sysctl", "-w", "net.core.wmem_max = 67108864"}, // 64MB: Maxmimum Send Buffer Size Allowed For User To Set In Custom Socket
-			{"sysctl", "-w", "net.core.rmem_max = 67108864"}, // 64MB: Maxmimum Receive Buffer Size Allowed For User To Set In Custom Socket
+			{"sysctl", "-w", "net.core.wmem_max=67108864"}, // 64MB: Maxmimum Send Buffer Size Allowed For User To Set In Custom Socket
+			{"sysctl", "-w", "net.core.rmem_max=67108864"}, // 64MB: Maxmimum Receive Buffer Size Allowed For User To Set In Custom Socket
 		}
 
 		// Execute the sysctl commands
