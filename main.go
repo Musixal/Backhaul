@@ -41,9 +41,6 @@ func main() {
 		logger.Fatalf("Usage: %s -c /path/to/config.toml", flag.CommandLine.Name())
 	}
 
-	// Apply temporary TCP optimizations at startup
-	cmd.ApplyTCPTuning()
-
 	// Create a context for graceful shutdown handling
 	ctx, cancel = context.WithCancel(context.Background())
 

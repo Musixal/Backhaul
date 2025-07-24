@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/musix/backhaul/internal/config"
+	"github.com/musix/backhaul/config"
 	"github.com/musix/backhaul/internal/utils"
 	"github.com/musix/backhaul/internal/web"
 

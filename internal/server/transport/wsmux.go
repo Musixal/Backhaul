@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/musix/backhaul/internal/config" // for mode
+	"github.com/musix/backhaul/config" // for mode
 	"github.com/musix/backhaul/internal/utils"
 	"github.com/musix/backhaul/internal/web"
 	"github.com/xtaci/smux"

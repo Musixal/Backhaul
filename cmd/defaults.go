@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/musix/backhaul/internal/config"
+	"github.com/musix/backhaul/config"
 
 	"github.com/sirupsen/logrus"
 )

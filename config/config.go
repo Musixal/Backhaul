@@ -38,6 +38,7 @@ type ServerConfig struct {
 	Heartbeat        int           `toml:"heartbeat"`
 	MuxCon           int           `toml:"mux_con"`
 	AcceptUDP        bool          `toml:"accept_udp"`
+	SkipOptz         bool          `toml:"skip_optz"`
 }
 
 // ClientConfig represents the configuration for the client.
@@ -62,6 +63,7 @@ type ClientConfig struct {
 	DialTimeout      int           `toml:"dial_timeout"`
 	AggressivePool   bool          `toml:"aggressive_pool"`
 	EdgeIP           string        `toml:"edge_ip"`
+	SkipOptz         bool          `toml:"skip_optz"`
 }
 
 // Config represents the complete configuration, including both server and client settings.

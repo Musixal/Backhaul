@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/musix/backhaul/internal/config"
+	"github.com/musix/backhaul/config"
 	"golang.org/x/exp/rand"
 )
 
