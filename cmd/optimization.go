@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os/exec"
 	"runtime"
 	"syscall"
@@ -11,22 +12,55 @@ func ApplyTCPTuning() {
 	if runtime.GOOS == "linux" {
 		logger.Info("Applying TCP optimizations for Linux...")
 
+		// Define the buffer sizes to try
+		bufferSizes := []int{
+			256 * 1024 * 1024, // 256MB
+			128 * 1024 * 1024, // 128MB
+			64 * 1024 * 1024,  // 64MB
+			32 * 1024 * 1024,  // 32MB
+			16 * 1024 * 1024,  // 16MB
+		}
+
+		// Loop through buffer sizes and attempt to apply them
+		for _, size := range bufferSizes {
+			// Build the command with the current buffer size
+			cmd := []string{"sysctl", "-w", fmt.Sprintf("net.core.rmem_max=%d", size)}
+			if err := exec.Command(cmd[0], cmd[1:]...).Run(); err == nil {
+				logger.Printf("Successfully set rmem_max to %d\n", size)
+				break // Exit the loop if successful
+			} else {
+				logger.Debugf("Failed to set rmem_max to %d, trying next lower value...\n", size)
+			}
+		}
+
+		// Same for wmem_max
+		for _, size := range bufferSizes {
+			// Build the command with the current buffer size for wmem_max
+			cmd := []string{"sysctl", "-w", fmt.Sprintf("net.core.wmem_max=%d", size)}
+			if err := exec.Command(cmd[0], cmd[1:]...).Run(); err == nil {
+				logger.Printf("Successfully set wmem_max to %d\n", size)
+				break // Exit the loop if successful
+			} else {
+				logger.Debugf("Failed to set wmem_max to %d, trying next lower value...\n", size)
+			}
+		}
+
 		// Commands for optimizing TCP parameters
 		commands := [][]string{
 			{"sysctl", "-w", "net.ipv4.ip_local_port_range=1024 65535"}, // Increase ephemeral ports
 			{"sysctl", "-w", "net.ipv4.tcp_tw_reuse=1"},                 // Reuse TIME_WAIT sockets
 			{"sysctl", "-w", "net.ipv4.tcp_fin_timeout=15"},             // Reduce TCP FIN timeout
-			{"sysctl", "-w", "net.core.somaxconn=4096"},                 // Increase max queue length of incoming connections
-			{"sysctl", "-w", "net.ipv4.tcp_max_syn_backlog=8192"},       // Increase SYN request backlog
+			{"sysctl", "-w", "net.core.somaxconn=65536"},                // Increase max queue length of incoming connections
+			{"sysctl", "-w", "net.ipv4.tcp_max_syn_backlog=20480"},      // Increase SYN request backlog
 			{"sysctl", "-w", "net.ipv4.tcp_window_scaling=1"},           // Enable TCP window scaling
 			{"sysctl", "-w", "net.ipv4.tcp_fastopen=3"},                 // Enable TCP Fast Open
-			{"sysctl", "-w", "net.ipv4.tcp_rmem=16384 262144 1048576"},  // Maximum of 1MB of TCP read buffer memory
-			{"sysctl", "-w", "net.ipv4.tcp_wmem=16384 262144 1048576"},  // Maximum of 1MB TCP write buffer memory
-			{"sysctl", "-w", "net.ipv4.tcp_notsent_lowat=4096"},         // WE DO NOT LET more than 4096 bytes of data goes to buffer if the unsended data still is in the buffer
-			{"sysctl", "-w", "net.core.rmem_default=262144"},            // Set Default Receive Memory in order to receive data with better pace and not start with minimum of 16k
-			{"sysctl", "-w", "net.core.wmem_default=262144"},
-			{"sysctl", "-w", "net.core.wmem_max = 67108864"}, // 64MB: Maxmimum Send Buffer Size Allowed For User To Set In Custom Socket
-			{"sysctl", "-w", "net.core.rmem_max = 67108864"}, // 64MB: Maxmimum Receive Buffer Size Allowed For User To Set In Custom Socket
+			// {"sysctl", "-w", "net.ipv4.tcp_rmem = 16384 1048576 33554432"}, // Maximum of 1MB of TCP read buffer memory
+			// {"sysctl", "-w", "net.ipv4.tcp_wmem = 16384 1048576 33554432"}, // Maximum of 1MB TCP write buffer memory
+			{"sysctl", "-w", "net.ipv4.tcp_notsent_lowat=32768"}, // Do not allow more than 4096 bytes of unsent data in buffer
+			//{"sysctl", "-w", "net.core.rmem_max=26214400"},       // Set maximum TCP receive buffer size
+			//{"sysctl", "-w", "net.core.wmem_max=26214400"},       // Set maximum TCP send buffer size
+			{"sysctl", "-w", "net.core.rmem_default=1048576"}, // Set default TCP receive buffer size
+			{"sysctl", "-w", "net.core.wmem_default=1048576"}, // Set default TCP send buffer size
 		}
 
 		// Execute the sysctl commands
