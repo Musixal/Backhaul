@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/musix/backhaul/internal/utils"
+	"github.com/musix/backhaul/internal/utils/network"
 	"github.com/musix/backhaul/internal/web"
 
 	"github.com/sirupsen/logrus"
@@ -53,7 +54,9 @@ type TcpMuxConfig struct {
 	WebPort          int
 	KeepAlive        time.Duration
 	Heartbeat        time.Duration // in seconds
-
+	MSS              int
+	SO_RCVBUF        int
+	SO_SNDBUF        int
 }
 
 func NewTcpMuxServer(parentCtx context.Context, config *TcpMuxConfig, logger *logrus.Logger) *TcpMuxTransport {
@@ -282,7 +285,15 @@ func (s *TcpMuxTransport) channelHandler() {
 }
 
 func (s *TcpMuxTransport) tunnelListener() {
-	listener, err := net.Listen("tcp", s.config.BindAddr)
+	listener, err := network.ListenWithBuffers(
+		"tcp",
+		s.config.BindAddr,
+		s.config.SO_RCVBUF,
+		s.config.SO_SNDBUF,
+		s.config.MSS,
+		s.config.KeepAlive,
+		!s.config.Nodelay,
+	)
 	if err != nil {
 		s.logger.Fatalf("failed to start listener on %s: %v", s.config.BindAddr, err)
 		return

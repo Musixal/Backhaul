@@ -39,6 +39,9 @@ type ServerConfig struct {
 	MuxCon           int           `toml:"mux_con"`
 	AcceptUDP        bool          `toml:"accept_udp"`
 	SkipOptz         bool          `toml:"skip_optz"`
+	MSS              int           `toml:"mss"`
+	SO_RCVBUF        int           `toml:"so_rcvbuf"`
+	SO_SNDBUF        int           `toml:"so_sndbuf"`
 }
 
 // ClientConfig represents the configuration for the client.
@@ -64,6 +67,9 @@ type ClientConfig struct {
 	AggressivePool   bool          `toml:"aggressive_pool"`
 	EdgeIP           string        `toml:"edge_ip"`
 	SkipOptz         bool          `toml:"skip_optz"`
+	MSS              int           `toml:"mss"`
+	SO_RCVBUF        int           `toml:"so_rcvbuf"`
+	SO_SNDBUF        int           `toml:"so_sndbuf"`
 }
 
 // Config represents the complete configuration, including both server and client settings.

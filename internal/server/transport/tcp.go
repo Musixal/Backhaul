@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/musix/backhaul/internal/utils"
+	"github.com/musix/backhaul/internal/utils/network"
 	"github.com/musix/backhaul/internal/web"
 
 	"github.com/sirupsen/logrus"
@@ -44,6 +45,9 @@ type TcpConfig struct {
 	ChannelSize  int
 	WebPort      int
 	AcceptUDP    bool
+	MSS          int
+	SO_RCVBUF    int
+	SO_SNDBUF    int
 }
 
 func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.Logger) *TcpTransport {
@@ -270,7 +274,15 @@ func (s *TcpTransport) channelHandler() {
 }
 
 func (s *TcpTransport) tunnelListener() {
-	listener, err := net.Listen("tcp", s.config.BindAddr)
+	listener, err := network.ListenWithBuffers(
+		"tcp",
+		s.config.BindAddr,
+		s.config.SO_RCVBUF,
+		s.config.SO_SNDBUF,
+		s.config.MSS,
+		s.config.KeepAlive,
+		!s.config.Nodelay,
+	)
 	if err != nil {
 		s.logger.Fatalf("failed to start listener on %s: %v", s.config.BindAddr, err)
 		return

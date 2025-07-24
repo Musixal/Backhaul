@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/musix/backhaul/internal/utils"
+	"github.com/musix/backhaul/internal/utils/network"
 	"github.com/musix/backhaul/internal/web"
 	"github.com/sirupsen/logrus"
 )
@@ -121,7 +122,7 @@ func (c *UdpTransport) channelDialer() {
 		case <-c.ctx.Done():
 			return
 		default:
-			tunnelTCPConn, err := TcpDialer(c.ctx, c.config.RemoteAddr, c.config.DialTimeOut, 30, true, 3, 0, 0)
+			tunnelTCPConn, err := network.TcpDialer(c.ctx, c.config.RemoteAddr, "", c.config.DialTimeOut, 30, true, 3, 0, 0, 0)
 			if err != nil {
 				c.logger.Errorf("channel dialer: %v", err)
 				time.Sleep(c.config.RetryInterval)
@@ -374,7 +375,7 @@ func (c *UdpTransport) handleTunnelConn(tunConn *net.UDPConn) {
 			continue
 		}
 
-		port, remoteAddr, err := ResolveRemoteAddr(string(buffer[:n]))
+		port, remoteAddr, err := network.ResolveRemoteAddr(string(buffer[:n]))
 
 		// Decrement active connections after successful or failed connection
 		atomic.AddInt32(&c.poolConnections, -1)

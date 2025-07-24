@@ -46,7 +46,8 @@ func (c *Client) Start() {
 
 	c.logger.Infof("client with remote address %s started successfully", c.config.RemoteAddr)
 
-	if c.config.Transport == config.TCP {
+	switch c.config.Transport {
+	case config.TCP:
 		tcpConfig := &transport.TcpConfig{
 			RemoteAddr:     c.config.RemoteAddr,
 			Nodelay:        c.config.Nodelay,
@@ -59,11 +60,14 @@ func (c *Client) Start() {
 			WebPort:        c.config.WebPort,
 			SnifferLog:     c.config.SnifferLog,
 			AggressivePool: c.config.AggressivePool,
+			MSS:            c.config.MSS,
+			SO_RCVBUF:      c.config.SO_RCVBUF,
+			SO_SNDBUF:      c.config.SO_SNDBUF,
 		}
 		tcpClient := transport.NewTCPClient(c.ctx, tcpConfig, c.logger)
 		go tcpClient.Start()
 
-	} else if c.config.Transport == config.TCPMUX {
+	case config.TCPMUX:
 		tcpMuxConfig := &transport.TcpMuxConfig{
 			RemoteAddr:       c.config.RemoteAddr,
 			Nodelay:          c.config.Nodelay,
@@ -80,11 +84,14 @@ func (c *Client) Start() {
 			WebPort:          c.config.WebPort,
 			SnifferLog:       c.config.SnifferLog,
 			AggressivePool:   c.config.AggressivePool,
+			MSS:              c.config.MSS,
+			SO_RCVBUF:        c.config.SO_RCVBUF,
+			SO_SNDBUF:        c.config.SO_SNDBUF,
 		}
 		tcpMuxClient := transport.NewMuxClient(c.ctx, tcpMuxConfig, c.logger)
 		go tcpMuxClient.Start()
 
-	} else if c.config.Transport == config.WS || c.config.Transport == config.WSS {
+	case config.WS, config.WSS:
 		WsConfig := &transport.WsConfig{
 			RemoteAddr:     c.config.RemoteAddr,
 			Nodelay:        c.config.Nodelay,
@@ -103,7 +110,7 @@ func (c *Client) Start() {
 		WsClient := transport.NewWSClient(c.ctx, WsConfig, c.logger)
 		go WsClient.Start()
 
-	} else if c.config.Transport == config.WSMUX || c.config.Transport == config.WSSMUX {
+	case config.WSMUX, config.WSSMUX:
 		wsMuxConfig := &transport.WsMuxConfig{
 			RemoteAddr:       c.config.RemoteAddr,
 			Nodelay:          c.config.Nodelay,
@@ -126,7 +133,7 @@ func (c *Client) Start() {
 		wsMuxClient := transport.NewWSMuxClient(c.ctx, wsMuxConfig, c.logger)
 		go wsMuxClient.Start()
 
-	} else if c.config.Transport == config.QUIC {
+	case config.QUIC:
 		quicConfig := &transport.QuicConfig{
 			RemoteAddr:     c.config.RemoteAddr,
 			Nodelay:        c.config.Nodelay,
@@ -143,7 +150,7 @@ func (c *Client) Start() {
 		quicClient := transport.NewQuicClient(c.ctx, quicConfig, c.logger)
 		go quicClient.ChannelDialer(true)
 
-	} else if c.config.Transport == config.UDP {
+	case config.UDP:
 		udpConfig := &transport.UdpConfig{
 			RemoteAddr:     c.config.RemoteAddr,
 			RetryInterval:  time.Duration(c.config.RetryInterval) * time.Second,
@@ -158,7 +165,7 @@ func (c *Client) Start() {
 		udpClient := transport.NewUDPClient(c.ctx, udpConfig, c.logger)
 		go udpClient.Start()
 
-	} else {
+	default:
 		c.logger.Fatal("invalid transport type: ", c.config.Transport)
 	}
 

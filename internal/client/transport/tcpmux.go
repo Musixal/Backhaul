@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/musix/backhaul/internal/utils"
+	"github.com/musix/backhaul/internal/utils/network"
 	"github.com/musix/backhaul/internal/web"
 
 	"github.com/sirupsen/logrus"
@@ -47,6 +49,9 @@ type TcpMuxConfig struct {
 	ConnPoolSize     int
 	WebPort          int
 	AggressivePool   bool
+	MSS              int
+	SO_RCVBUF        int
+	SO_SNDBUF        int
 }
 
 func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logrus.Logger) *TcpMuxTransport {
@@ -139,7 +144,7 @@ func (c *TcpMuxTransport) channelDialer() {
 		case <-c.ctx.Done():
 			return
 		default:
-			tunnelConn, err := TcpDialer(c.ctx, c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, true, 3, 0, 0)
+			tunnelConn, err := network.TcpDialer(c.ctx, c.config.RemoteAddr, "", c.config.DialTimeOut, c.config.KeepAlive, true, 3, 0, 0, 0)
 			if err != nil {
 				c.logger.Errorf("channel dialer: %v", err)
 				time.Sleep(c.config.RetryInterval)
@@ -326,8 +331,7 @@ func (c *TcpMuxTransport) tunnelDialer() {
 	c.logger.Debugf("initiating new tunnel connection to address %s", c.config.RemoteAddr)
 
 	// Dial to the tunnel server
-	// in case of mux we set 2M which is good for 200mbit per connection
-	tunnelConn, err := TcpDialer(c.ctx, c.config.RemoteAddr, c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 3, 2*1024*1024, 2*1024*1024)
+	tunnelConn, err := network.TcpDialer(c.ctx, c.config.RemoteAddr, "", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 3, c.config.SO_RCVBUF, c.config.SO_SNDBUF, c.config.MSS)
 	if err != nil {
 		c.logger.Errorf("tunnel server dialer: %v", err)
 
@@ -378,14 +382,26 @@ func (c *TcpMuxTransport) handleSession(tunnelConn net.Conn) {
 
 func (c *TcpMuxTransport) localDialer(stream *smux.Stream, remoteAddr string) {
 	// Extract the port from the received address
-	port, resolvedAddr, err := ResolveRemoteAddr(remoteAddr)
+	port, resolvedAddr, err := network.ResolveRemoteAddr(remoteAddr)
 	if err != nil {
 		c.logger.Infof("failed to resolve remote port: %v", err)
 		stream.Close()
 		return
 	}
 
-	localConnection, err := TcpDialer(c.ctx, resolvedAddr, c.config.DialTimeOut, c.config.KeepAlive, true, 1, 32*1024, 32*1024)
+	var sendBuf, recvBuf int
+
+	if strings.Contains(resolvedAddr, "127.0.0.1") {
+		// Use 32 KB for localhost
+		sendBuf = 32 * 1024
+		recvBuf = 32 * 1024
+	} else {
+		// Use your custom buffer sizes
+		sendBuf = c.config.SO_SNDBUF
+		recvBuf = c.config.SO_RCVBUF
+	}
+
+	localConnection, err := network.TcpDialer(c.ctx, remoteAddr, "", c.config.DialTimeOut, c.config.KeepAlive, true, 1, recvBuf, sendBuf, c.config.MSS)
 	if err != nil {
 		c.logger.Errorf("local dialer: %v", err)
 		stream.Close()

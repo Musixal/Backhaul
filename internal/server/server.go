@@ -39,7 +39,8 @@ func (s *Server) Start() {
 		}()
 	}
 
-	if s.config.Transport == config.TCP {
+	switch s.config.Transport {
+	case config.TCP:
 		tcpConfig := &transport.TcpConfig{
 			BindAddr:    s.config.BindAddr,
 			Nodelay:     s.config.Nodelay,
@@ -52,12 +53,15 @@ func (s *Server) Start() {
 			WebPort:     s.config.WebPort,
 			SnifferLog:  s.config.SnifferLog,
 			AcceptUDP:   s.config.AcceptUDP,
+			MSS:         s.config.MSS,
+			SO_RCVBUF:   s.config.SO_RCVBUF,
+			SO_SNDBUF:   s.config.SO_SNDBUF,
 		}
 
 		tcpServer := transport.NewTCPServer(s.ctx, tcpConfig, s.logger)
 		go tcpServer.Start()
 
-	} else if s.config.Transport == config.TCPMUX {
+	case config.TCPMUX:
 		tcpMuxConfig := &transport.TcpMuxConfig{
 			BindAddr:         s.config.BindAddr,
 			Nodelay:          s.config.Nodelay,
@@ -74,12 +78,15 @@ func (s *Server) Start() {
 			Sniffer:          s.config.Sniffer,
 			WebPort:          s.config.WebPort,
 			SnifferLog:       s.config.SnifferLog,
+			MSS:              s.config.MSS,
+			SO_RCVBUF:        s.config.SO_RCVBUF,
+			SO_SNDBUF:        s.config.SO_SNDBUF,
 		}
 
 		tcpMuxServer := transport.NewTcpMuxServer(s.ctx, tcpMuxConfig, s.logger)
 		go tcpMuxServer.Start()
 
-	} else if s.config.Transport == config.WS || s.config.Transport == config.WSS {
+	case config.WS, config.WSS:
 		wsConfig := &transport.WsConfig{
 			BindAddr:    s.config.BindAddr,
 			Nodelay:     s.config.Nodelay,
@@ -99,7 +106,7 @@ func (s *Server) Start() {
 		wsServer := transport.NewWSServer(s.ctx, wsConfig, s.logger)
 		go wsServer.Start()
 
-	} else if s.config.Transport == config.WSMUX || s.config.Transport == config.WSSMUX {
+	case config.WSMUX, config.WSSMUX:
 		wsMuxConfig := &transport.WsMuxConfig{
 			BindAddr:         s.config.BindAddr,
 			Nodelay:          s.config.Nodelay,
@@ -124,7 +131,7 @@ func (s *Server) Start() {
 		wsMuxServer := transport.NewWSMuxServer(s.ctx, wsMuxConfig, s.logger)
 		go wsMuxServer.Start()
 
-	} else if s.config.Transport == config.QUIC {
+	case config.QUIC:
 		quicConfig := &transport.QuicConfig{
 			BindAddr:    s.config.BindAddr,
 			Nodelay:     s.config.Nodelay,
@@ -144,7 +151,7 @@ func (s *Server) Start() {
 		quicServer := transport.NewQuicServer(s.ctx, quicConfig, s.logger)
 		go quicServer.TunnelListener()
 
-	} else if s.config.Transport == config.UDP {
+	case config.UDP:
 		udpConfig := &transport.UdpConfig{
 			BindAddr:    s.config.BindAddr,
 			Heartbeat:   time.Duration(s.config.Heartbeat) * time.Second,
@@ -159,7 +166,7 @@ func (s *Server) Start() {
 		udpServer := transport.NewUDPServer(s.ctx, udpConfig, s.logger)
 		go udpServer.Start()
 
-	} else {
+	default:
 		s.logger.Fatal("invalid transport type: ", s.config.Transport)
 	}
 
