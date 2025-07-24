@@ -11,6 +11,7 @@ import (
 
 	"github.com/musix/backhaul/config"
 	"github.com/musix/backhaul/internal/utils"
+	"github.com/musix/backhaul/internal/utils/handlers"
 	"github.com/musix/backhaul/internal/utils/network"
 	"github.com/musix/backhaul/internal/web"
 
@@ -358,5 +359,5 @@ func (c *WsTransport) localDialer(tunnelCon *websocket.Conn, remoteAddr string, 
 	}
 	c.logger.Debugf("connected to local address %s successfully", remoteAddr)
 
-	utils.WSConnectionHandler(tunnelCon, localConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffer)
+	handlers.WSConnectionHandler(c.ctx, tunnelCon, localConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffer)
 }

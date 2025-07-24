@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/musix/backhaul/internal/utils"
+	"github.com/musix/backhaul/internal/utils/handlers"
 	"github.com/musix/backhaul/internal/utils/network"
 	"github.com/musix/backhaul/internal/web"
 
@@ -389,5 +390,5 @@ func (c *TcpTransport) localDialer(tcpConn net.Conn, resolvedAddr string, port i
 
 	c.logger.Debugf("connected to local address %s successfully", resolvedAddr)
 
-	utils.TCPConnectionHandler(tcpConn, localConnection, c.logger, c.usageMonitor, port, c.config.Sniffer)
+	handlers.TCPConnectionHandler(c.ctx, tcpConn, localConnection, c.logger, c.usageMonitor, port, c.config.Sniffer)
 }

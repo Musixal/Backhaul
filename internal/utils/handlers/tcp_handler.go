@@ -1,6 +1,7 @@
-package utils
+package handlers
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net"
@@ -9,7 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func TCPConnectionHandler(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
+func TCPConnectionHandler(ctx context.Context, from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
 	done := make(chan struct{})
 
 	go func() {
@@ -19,7 +20,13 @@ func TCPConnectionHandler(from net.Conn, to net.Conn, logger *logrus.Logger, usa
 
 	transferData(to, from, logger, usage, remotePort, sniffer)
 
-	<-done
+	select {
+	case <-ctx.Done():
+		from.Close()
+		to.Close()
+		return
+	case <-done:
+	}
 }
 
 // Using direct Read and Write for transferring data

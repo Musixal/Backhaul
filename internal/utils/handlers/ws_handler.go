@@ -1,6 +1,7 @@
-package utils
+package handlers
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net"
@@ -11,7 +12,7 @@ import (
 )
 
 // WebSocketToTCPConnectionHandler handles data transfer between a WebSocket and a TCP connection
-func WSConnectionHandler(wsConn *websocket.Conn, tcpConn net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
+func WSConnectionHandler(ctx context.Context, wsConn *websocket.Conn, tcpConn net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
 	done := make(chan struct{})
 
 	go func() {
@@ -21,7 +22,13 @@ func WSConnectionHandler(wsConn *websocket.Conn, tcpConn net.Conn, logger *logru
 
 	transferTCPToWebSocket(tcpConn, wsConn, logger, usage, remotePort, sniffer)
 
-	<-done
+	select {
+	case <-ctx.Done():
+		wsConn.Close()
+		tcpConn.Close()
+		return
+	case <-done:
+	}
 }
 
 // transferWebSocketToTCP transfers data from a WebSocket connection to a TCP connection
