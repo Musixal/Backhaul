@@ -402,7 +402,7 @@ func (c *TcpMuxTransport) localDialer(stream *smux.Stream, remoteAddr string) {
 		recvBuf = c.config.SO_RCVBUF
 	}
 
-	localConnection, err := network.TcpDialer(c.ctx, remoteAddr, "", c.config.DialTimeOut, c.config.KeepAlive, true, 1, recvBuf, sendBuf, c.config.MSS)
+	localConnection, err := network.TcpDialer(c.ctx, resolvedAddr, "", c.config.DialTimeOut, c.config.KeepAlive, true, 1, recvBuf, sendBuf, c.config.MSS)
 	if err != nil {
 		c.logger.Errorf("local dialer: %v", err)
 		stream.Close()
