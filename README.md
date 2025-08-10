@@ -21,10 +21,11 @@ Welcome to the **`Backhaul`** project! This project provides a high-performance 
       - [WSS Multiplexing Configuration](#wss-multiplexing-configuration)
 5. [Generating a Self-Signed TLS Certificate with OpenSSL](#generating-a-self-signed-tls-certificate-with-openssl)
 6. [Running backhaul as a service](#running-backhaul-as-a-service)
-7. [FAQ](#faq)
-8. [Benchmark](#benchmark)
-9. [License](#license)
-10. [Donation](#donation)
+7. [Monitoring with prometheus/grafana](#monitoring)
+8. [FAQ](#faq)
+9. [Benchmark](#benchmark)
+10. [License](#license)
+11. [Donation](#donation)
 
 ---
 
@@ -106,8 +107,8 @@ To start using the solution, you'll need to configure both server and client com
     mss = 1360                    # TCP/TCPMux: Maximum Segment Size in bytes; controls max TCP payload size to avoid fragmentation. (default: system-defined)
     so_rcvbuf = 4194304           # TCP/TCPMux: Socket receive buffer size (bytes); larger buffer allows higher throughput on receive side. (default: system-defined)
     so_sndbuf = 1048576           # TCP/TCPMux: Socket send buffer size (bytes); controls send queue size to manage outgoing data flow. (default: system-defined)
-
-
+  
+    metrics = ["default", "prometheus"] # metrics exposed via web_port. only the legacy json ("default") and prometheus ("prometheus") are supported. to achieve backward compatibility without changing the config file, legacy json is enabled by default.
 
     ports = [
     "443-600",                  # Listen on all ports in the range 443 to 600
@@ -154,6 +155,8 @@ To start using the solution, you'll need to configure both server and client com
    mss = 1360                    # TCP/TCPMux: Maximum Segment Size in bytes; controls max TCP payload size to avoid fragmentation. (default: system-defined)
    so_rcvbuf = 1048576           # TCP/TCPMux: Socket receive buffer size (bytes); larger buffer allows higher throughput on receive side. (default: system-defined)
    so_sndbuf = 4194304           # TCP/TCPMux: Socket send buffer size (bytes); controls send queue size to manage outgoing data flow. (default: system-defined)
+  
+   metrics = ["default", "prometheus"] # metrics exposed via web_port. only the legacy json ("default") and prometheus ("prometheus") are supported. to achieve backward compatibility without changing the config file, legacy json is enabled by default.
    ```
 
    To start the `client`:
@@ -570,6 +573,35 @@ sudo systemctl status backhaul.service
 ```bash
 journalctl -u backhaul.service -e -f
 ```
+
+## Monitoring
+
+setting `web_port` to a non-zero value will enable the monitoring interface.
+
+you can choose which monitoring interface you want to use by setting `metrics` to `prometheus`, `default` or both. empty array will fallback to `["default"]`
+
+### Basic Monitoring Setup
+you can set up a basic monitoring setup using prometheus and grafana.
+![grafana dashboard](monitoring/dashboard.jpg)
+
+(while not necessary, it is recommended to use docker)
+1. install docker, docker-compose
+    ```bash
+    sudo apt update && sudo apt install docker.io docker-compose-v2
+    # to run docker without sudo
+    sudo groupadd docker
+    sudo usermod -aG docker $USER
+    # If you're running Linux in a virtual machine, it may be necessary to restart the virtual machine for changes to take effect.
+   ```
+2. create a `docker-compose.yml` like [this example](monitoring/docker-compose.yml)
+3. create a prometheus.yaml like [this example](monitoring/prometheus.yml)
+4. run the docker-compose file
+    ```bash
+      docker compose up -d
+    ```
+5. visit grafana dashboard at `http://SERVER_IP:3000` (default username/password is `admin`)
+6. create a new datasource, choose prometheus, and enter the url `http://prometheus:9090`
+7. via `Dashboards > New > import` import the [example dashboard](monitoring/dashboard.jpg) or [create your own](https://grafana.com/tutorials/)
 
 ## FAQ
 

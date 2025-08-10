@@ -2,17 +2,16 @@ package transport
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/musix/backhaul/config"
+	"github.com/musix/backhaul/internal/stats"
 	"github.com/musix/backhaul/internal/utils"
 	"github.com/musix/backhaul/internal/utils/handlers"
 	"github.com/musix/backhaul/internal/utils/network"
-	"github.com/musix/backhaul/internal/web"
 	"github.com/xtaci/smux"
 
 	"github.com/gorilla/websocket"
@@ -27,7 +26,6 @@ type WsMuxTransport struct {
 	cancel          context.CancelFunc
 	logger          *logrus.Logger
 	controlChannel  *websocket.Conn
-	usageMonitor    *web.Usage
 	restartMutex    sync.Mutex
 	poolConnections int32
 	loadConnections int32
@@ -37,7 +35,6 @@ type WsMuxConfig struct {
 	RemoteAddr       string
 	Token            string
 	SnifferLog       string
-	TunnelStatus     string
 	Nodelay          bool
 	Sniffer          bool
 	KeepAlive        time.Duration
@@ -74,7 +71,6 @@ func NewWSMuxClient(parentCtx context.Context, config *WsMuxConfig, logger *logr
 		cancel:          cancel,
 		logger:          logger,
 		controlChannel:  nil, // will be set when a control connection is established
-		usageMonitor:    web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 		poolConnections: 0,
 		loadConnections: 0,
 		controlFlow:     make(chan struct{}, 100),
@@ -84,11 +80,7 @@ func NewWSMuxClient(parentCtx context.Context, config *WsMuxConfig, logger *logr
 }
 
 func (c *WsMuxTransport) Start() {
-	if c.config.WebPort > 0 {
-		go c.usageMonitor.Monitor()
-	}
-
-	c.config.TunnelStatus = fmt.Sprintf("Disconnected (%s)", c.config.Mode)
+	stats.SetDown()
 
 	go c.channelDialer()
 }
@@ -123,14 +115,14 @@ func (c *WsMuxTransport) Restart() {
 
 	// Re-initialize variables
 	c.controlChannel = nil
-	c.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.config.Sniffer, &c.config.TunnelStatus, c.logger)
-	c.config.TunnelStatus = ""
 	c.poolConnections = 0
 	c.loadConnections = 0
 	c.controlFlow = make(chan struct{}, 100)
 
 	// set the log level again
 	c.logger.SetLevel(level)
+
+	stats.SetDown()
 
 	go c.Start()
 }
@@ -153,7 +145,7 @@ func (c *WsMuxTransport) channelDialer() {
 			c.controlChannel = tunnelWSConn
 			c.logger.Info("control channel established successfully")
 
-			c.config.TunnelStatus = fmt.Sprintf("Connected (%s)", c.config.Mode)
+			stats.SetUp()
 
 			go c.poolMaintainer()
 			go c.channelHandler()
@@ -378,5 +370,5 @@ func (c *WsMuxTransport) localDialer(stream *smux.Stream, remoteAddr string) {
 
 	c.logger.Debugf("connected to local address %s successfully", remoteAddr)
 
-	handlers.TCPConnectionHandler(c.ctx, stream, localConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffer)
+	handlers.TCPConnectionHandler(c.ctx, stream, localConnection, c.logger, int(port))
 }

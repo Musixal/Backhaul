@@ -11,10 +11,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/musix/backhaul/internal/stats"
 	"github.com/musix/backhaul/internal/utils"
 	"github.com/musix/backhaul/internal/utils/handlers"
 	"github.com/musix/backhaul/internal/utils/network"
-	"github.com/musix/backhaul/internal/web"
 
 	"github.com/sirupsen/logrus"
 	"github.com/xtaci/smux"
@@ -32,7 +32,6 @@ type TcpMuxTransport struct {
 	localChannel     chan LocalTCPConn
 	reqNewConnChan   chan struct{}
 	controlChannel   net.Conn
-	usageMonitor     *web.Usage
 	restartMutex     sync.Mutex
 	streamCounter    int32
 	sessionCounter   int32
@@ -40,7 +39,6 @@ type TcpMuxTransport struct {
 
 type TcpMuxConfig struct {
 	BindAddr         string
-	TunnelStatus     string
 	SnifferLog       string
 	Token            string
 	Ports            []string
@@ -86,24 +84,20 @@ func NewTcpMuxServer(parentCtx context.Context, config *TcpMuxConfig, logger *lo
 		controlChannel:   nil, // will be set when a control connection is established
 		streamCounter:    0,
 		sessionCounter:   0,
-		usageMonitor:     web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
 	return server
 }
 
 func (s *TcpMuxTransport) Start() {
-	if s.config.WebPort > 0 {
-		go s.usageMonitor.Monitor()
-	}
-	s.config.TunnelStatus = "Disconnected (TCPMux)"
+	stats.SetDown()
 
 	go s.tunnelListener()
 
 	s.channelHandshake()
 
 	if s.controlChannel != nil {
-		s.config.TunnelStatus = "Connected (TCPMux)"
+		stats.SetUp()
 
 		numCPU := runtime.NumCPU()
 		if numCPU > 4 {
@@ -155,13 +149,13 @@ func (s *TcpMuxTransport) Restart() {
 	s.reqNewConnChan = make(chan struct{}, s.config.ChannelSize)
 	s.handshakeChannel = make(chan net.Conn)
 	s.controlChannel = nil
-	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.config.Sniffer, &s.config.TunnelStatus, s.logger)
-	s.config.TunnelStatus = ""
 	s.streamCounter = 0
 	s.sessionCounter = 0
 
 	// set the log level again
 	s.logger.SetLevel(level)
+
+	stats.SetDown()
 
 	go s.Start()
 }
@@ -605,7 +599,7 @@ func (s *TcpMuxTransport) handleSession(session *smux.Session) {
 
 			// Handle data exchange between connections
 			go func() {
-				handlers.TCPConnectionHandler(s.ctx, stream, incomingConn.conn, s.logger, s.usageMonitor, incomingConn.conn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
+				handlers.TCPConnectionHandler(s.ctx, stream, incomingConn.conn, s.logger, incomingConn.conn.LocalAddr().(*net.TCPAddr).Port)
 				atomic.AddInt32(&s.streamCounter, -1)
 				<-counter // read signal from the channel
 			}()

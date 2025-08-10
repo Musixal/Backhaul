@@ -5,6 +5,7 @@ import (
 
 	"github.com/musix/backhaul/config"
 	"github.com/musix/backhaul/internal/client"
+	"github.com/musix/backhaul/internal/web/metrics"
 
 	"github.com/musix/backhaul/internal/server"
 	"github.com/musix/backhaul/internal/utils"
@@ -26,6 +27,8 @@ func Run(configPath string, ctx context.Context) {
 	// Apply default values to the configuration
 	applyDefaults(cfg)
 
+	metricHandler := metrics.NewMetricsHandler(ctx, logger, *cfg)
+
 	configType := ""
 	if cfg.Server.BindAddr != "" {
 		configType = "server"
@@ -45,6 +48,7 @@ func Run(configPath string, ctx context.Context) {
 
 		srv := server.NewServer(&cfg.Server, ctx) // server
 		go srv.Start()
+		go metricHandler.Monitor()
 
 		// Wait for shutdown signal
 		<-ctx.Done()
@@ -58,6 +62,7 @@ func Run(configPath string, ctx context.Context) {
 
 		clnt := client.NewClient(&cfg.Client, ctx) // client
 		go clnt.Start()
+		go metricHandler.Monitor()
 
 		// Wait for shutdown signal
 		<-ctx.Done()

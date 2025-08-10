@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/musix/backhaul/config"
+	"github.com/musix/backhaul/internal/stats"
 	"github.com/musix/backhaul/internal/utils"
 	"github.com/musix/backhaul/internal/utils/handlers"
-	"github.com/musix/backhaul/internal/web"
 
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
@@ -31,24 +31,22 @@ type WsTransport struct {
 	reqNewConnChan chan struct{}
 	controlChannel *websocket.Conn
 	restartMutex   sync.Mutex
-	usageMonitor   *web.Usage
 }
 
 type WsConfig struct {
-	BindAddr     string
-	SnifferLog   string
-	TLSCertFile  string // Path to the TLS certificate file
-	TLSKeyFile   string // Path to the TLS key file
-	TunnelStatus string
-	Token        string
-	Ports        []string
-	Nodelay      bool
-	Sniffer      bool
-	KeepAlive    time.Duration
-	Heartbeat    time.Duration // in seconds
-	ChannelSize  int
-	WebPort      int
-	Mode         config.TransportType // ws or wss
+	BindAddr    string
+	SnifferLog  string
+	TLSCertFile string // Path to the TLS certificate file
+	TLSKeyFile  string // Path to the TLS key file
+	Token       string
+	Ports       []string
+	Nodelay     bool
+	Sniffer     bool
+	KeepAlive   time.Duration
+	Heartbeat   time.Duration // in seconds
+	ChannelSize int
+	WebPort     int
+	Mode        config.TransportType // ws or wss
 
 }
 
@@ -67,19 +65,13 @@ func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 		localChannel:   make(chan LocalTCPConn, config.ChannelSize),
 		reqNewConnChan: make(chan struct{}, config.ChannelSize),
 		controlChannel: nil, // will be set when a control connection is established
-		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
 	return server
 }
 
 func (s *WsTransport) Start() {
-	// for  webui
-	if s.config.WebPort > 0 {
-		go s.usageMonitor.Monitor()
-	}
-
-	s.config.TunnelStatus = fmt.Sprintf("Disconnected (%s)", s.config.Mode)
+	stats.SetDown()
 
 	go s.tunnelListener()
 
@@ -116,11 +108,11 @@ func (s *WsTransport) Restart() {
 	s.localChannel = make(chan LocalTCPConn, s.config.ChannelSize)
 	s.reqNewConnChan = make(chan struct{}, s.config.ChannelSize)
 	s.controlChannel = nil
-	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.config.Sniffer, &s.config.TunnelStatus, s.logger)
-	s.config.TunnelStatus = ""
 
 	// set the log level again
 	s.logger.SetLevel(level)
+
+	stats.SetDown()
 
 	go s.Start()
 }
@@ -258,8 +250,7 @@ func (s *WsTransport) tunnelListener() {
 					go s.handleLoop()
 				}
 
-				s.config.TunnelStatus = fmt.Sprintf("Connected (%s)", s.config.Mode)
-
+				stats.SetUp()
 			} else if strings.HasPrefix(r.URL.Path, "/tunnel") {
 				wsConn := TunnelChannel{
 					conn: conn,
@@ -510,7 +501,7 @@ func (s *WsTransport) handleLoop() {
 						continue loop
 					}
 					// Handle data exchange between connections
-					go handlers.WSConnectionHandler(s.ctx, tunnelConnection.conn, localConn.conn, s.logger, s.usageMonitor, localConn.conn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
+					go handlers.WSConnectionHandler(s.ctx, tunnelConnection.conn, localConn.conn, s.logger, localConn.conn.LocalAddr().(*net.TCPAddr).Port)
 					break loop
 				}
 			}

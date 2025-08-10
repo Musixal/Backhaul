@@ -2,17 +2,16 @@ package transport
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/musix/backhaul/internal/stats"
 	"github.com/musix/backhaul/internal/utils"
 	"github.com/musix/backhaul/internal/utils/handlers"
 	"github.com/musix/backhaul/internal/utils/network"
-	"github.com/musix/backhaul/internal/web"
 
 	"github.com/sirupsen/logrus"
 )
@@ -24,7 +23,6 @@ type TcpTransport struct {
 	cancel          context.CancelFunc
 	logger          *logrus.Logger
 	controlChannel  net.Conn
-	usageMonitor    *web.Usage
 	restartMutex    sync.Mutex
 	poolConnections int32
 	loadConnections int32
@@ -34,7 +32,6 @@ type TcpConfig struct {
 	RemoteAddr     string
 	Token          string
 	SnifferLog     string
-	TunnelStatus   string
 	KeepAlive      time.Duration
 	RetryInterval  time.Duration
 	DialTimeOut    time.Duration
@@ -60,7 +57,6 @@ func NewTCPClient(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		cancel:          cancel,
 		logger:          logger,
 		controlChannel:  nil, // will be set when a control connection is established
-		usageMonitor:    web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 		poolConnections: 0,
 		loadConnections: 0,
 		controlFlow:     make(chan struct{}, 100),
@@ -70,11 +66,7 @@ func NewTCPClient(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 }
 
 func (c *TcpTransport) Start() {
-	if c.config.WebPort > 0 {
-		go c.usageMonitor.Monitor()
-	}
-
-	c.config.TunnelStatus = "Disconnected (TCP)"
+	stats.SetDown()
 
 	go c.channelDialer()
 }
@@ -108,14 +100,14 @@ func (c *TcpTransport) Restart() {
 
 	// Re-initialize variables
 	c.controlChannel = nil
-	c.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.config.Sniffer, &c.config.TunnelStatus, c.logger)
-	c.config.TunnelStatus = ""
 	c.poolConnections = 0
 	c.loadConnections = 0
 	c.controlFlow = make(chan struct{}, 100)
 
 	// set the log level again
 	c.logger.SetLevel(level)
+
+	stats.SetDown()
 
 	go c.Start()
 }
@@ -170,7 +162,7 @@ func (c *TcpTransport) channelDialer() {
 				c.controlChannel = tunnelTCPConn
 				c.logger.Info("control channel established successfully")
 
-				c.config.TunnelStatus = "Connected (TCP)"
+				stats.SetUp()
 				go c.poolMaintainer()
 				go c.channelHandler()
 
@@ -360,7 +352,7 @@ func (c *TcpTransport) tunnelDialer() {
 		c.localDialer(tcpConn, resolvedAddr, port)
 
 	case utils.SG_UDP:
-		UDPDialer(tcpConn, resolvedAddr, c.logger, c.usageMonitor, port, c.config.Sniffer)
+		UDPDialer(tcpConn, resolvedAddr, c.logger, port)
 
 	default:
 		c.logger.Error("undefined transport. close the connection.")
@@ -390,5 +382,5 @@ func (c *TcpTransport) localDialer(tcpConn net.Conn, resolvedAddr string, port i
 
 	c.logger.Debugf("connected to local address %s successfully", resolvedAddr)
 
-	handlers.TCPConnectionHandler(c.ctx, tcpConn, localConnection, c.logger, c.usageMonitor, port, c.config.Sniffer)
+	handlers.TCPConnectionHandler(c.ctx, tcpConn, localConnection, c.logger, port)
 }

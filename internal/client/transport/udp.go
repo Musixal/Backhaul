@@ -2,15 +2,14 @@ package transport
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/musix/backhaul/internal/stats"
 	"github.com/musix/backhaul/internal/utils"
 	"github.com/musix/backhaul/internal/utils/network"
-	"github.com/musix/backhaul/internal/web"
 	"github.com/sirupsen/logrus"
 )
 
@@ -21,7 +20,6 @@ type UdpTransport struct {
 	cancel          context.CancelFunc
 	logger          *logrus.Logger
 	controlChannel  net.Conn
-	usageMonitor    *web.Usage
 	restartMutex    sync.Mutex
 	poolConnections int32
 	loadConnections int32
@@ -31,7 +29,6 @@ type UdpConfig struct {
 	RemoteAddr     string
 	Token          string
 	SnifferLog     string
-	TunnelStatus   string
 	RetryInterval  time.Duration
 	DialTimeOut    time.Duration
 	ConnPoolSize   int
@@ -52,7 +49,6 @@ func NewUDPClient(parentCtx context.Context, config *UdpConfig, logger *logrus.L
 		cancel:          cancel,
 		logger:          logger,
 		controlChannel:  nil, // will be set when a control connection is established
-		usageMonitor:    web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 		poolConnections: 0,
 		loadConnections: 0,
 		controlFlow:     make(chan struct{}, 100),
@@ -62,11 +58,7 @@ func NewUDPClient(parentCtx context.Context, config *UdpConfig, logger *logrus.L
 }
 
 func (c *UdpTransport) Start() {
-	if c.config.WebPort > 0 {
-		go c.usageMonitor.Monitor()
-	}
-
-	c.config.TunnelStatus = "Disconnected (UDP)"
+	stats.SetDown()
 
 	go c.channelDialer()
 }
@@ -101,14 +93,14 @@ func (c *UdpTransport) Restart() {
 
 	// Re-initialize variables
 	c.controlChannel = nil
-	c.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", c.config.WebPort), ctx, c.config.SnifferLog, c.config.Sniffer, &c.config.TunnelStatus, c.logger)
-	c.config.TunnelStatus = ""
 	c.poolConnections = 0
 	c.loadConnections = 0
 	c.controlFlow = make(chan struct{}, 100)
 
 	// set the log level again
 	c.logger.SetLevel(level)
+
+	stats.SetDown()
 
 	go c.Start()
 
@@ -163,7 +155,7 @@ func (c *UdpTransport) channelDialer() {
 				c.controlChannel = tunnelTCPConn
 				c.logger.Info("control channel established successfully")
 
-				c.config.TunnelStatus = "Connected (UDP)"
+				stats.SetUp()
 
 				go c.poolMaintainer()
 				go c.channelHandler()
@@ -456,7 +448,7 @@ func (c *UdpTransport) udpCopy(srcConn, dstConn *net.UDPConn, port int) {
 
 		// Optionally update the port usage stats if sniffing is enabled
 		if c.config.Sniffer {
-			c.usageMonitor.AddOrUpdatePort(port, uint64(totalWritten))
+			stats.RecordPortUsage(port, uint64(totalWritten))
 		}
 
 		c.logger.Debugf("forwarded %d bytes from %s to %s", n, srcConn.LocalAddr().String(), dstConn.RemoteAddr().String())
