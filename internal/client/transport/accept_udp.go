@@ -7,13 +7,13 @@ import (
 	"net"
 	"time"
 
-	"github.com/musix/backhaul/internal/web"
+	"github.com/musix/backhaul/internal/stats"
 	"github.com/sirupsen/logrus"
 )
 
 const BufferSize = 16 * 1024
 
-func UDPDialer(tcp net.Conn, remoteAddr string, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
+func UDPDialer(tcp net.Conn, remoteAddr string, logger *logrus.Logger, remotePort int) {
 	remoteUDPAddr, err := net.ResolveUDPAddr("udp", remoteAddr)
 	if err != nil {
 		logger.Fatalf("failed to resolve remote address: %v", err)
@@ -30,16 +30,16 @@ func UDPDialer(tcp net.Conn, remoteAddr string, logger *logrus.Logger, usage *we
 	done := make(chan struct{})
 
 	go func() {
-		go tcpToUDP(tcp, remoteConn, logger, usage, remotePort, sniffer)
+		go tcpToUDP(tcp, remoteConn, logger, remotePort)
 		done <- struct{}{}
 	}()
 
-	udpToTCP(tcp, remoteConn, logger, usage, remotePort, sniffer)
+	udpToTCP(tcp, remoteConn, logger, remotePort)
 
 	<-done
 }
 
-func tcpToUDP(tcp net.Conn, udp *net.UDPConn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
+func tcpToUDP(tcp net.Conn, udp *net.UDPConn, logger *logrus.Logger, remotePort int) {
 	buf := make([]byte, BufferSize)
 	lenBuf := make([]byte, 2) // 2-byte header for packet size
 
@@ -83,13 +83,11 @@ func tcpToUDP(tcp net.Conn, udp *net.UDPConn, logger *logrus.Logger, usage *web.
 
 		logger.Tracef("read %d bytes from TCP, wrote %d bytes to UDP", packetSize, totalWritten)
 
-		if sniffer {
-			usage.AddOrUpdatePort(remotePort, uint64(totalWritten))
-		}
+		stats.RecordPortUsage(remotePort, uint64(totalWritten))
 	}
 }
 
-func udpToTCP(tcp net.Conn, udp *net.UDPConn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
+func udpToTCP(tcp net.Conn, udp *net.UDPConn, logger *logrus.Logger, remotePort int) {
 	buf := make([]byte, BufferSize-6) // reserved for 5 bytes header
 
 	// Pre-allocate headers
@@ -146,8 +144,6 @@ func udpToTCP(tcp net.Conn, udp *net.UDPConn, logger *logrus.Logger, usage *web.
 
 		logger.Tracef("read %d bytes from UDP, wrote %d bytes to TCP", r, totalWritten)
 
-		if sniffer {
-			usage.AddOrUpdatePort(remotePort, uint64(totalWritten))
-		}
+		stats.RecordPortUsage(remotePort, uint64(totalWritten))
 	}
 }

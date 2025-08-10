@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/musix/backhaul/internal/stats"
 	"github.com/musix/backhaul/internal/utils"
-	"github.com/musix/backhaul/internal/web"
 	"github.com/sirupsen/logrus"
 )
 
@@ -26,20 +26,18 @@ type UdpTransport struct {
 	reqNewConnChan    chan struct{}
 	controlChannel    net.Conn
 	restartMutex      sync.Mutex
-	usageMonitor      *web.Usage
 	rtt               int64 // for Fun!
 }
 
 type UdpConfig struct {
-	BindAddr     string
-	Token        string
-	SnifferLog   string
-	TunnelStatus string
-	Ports        []string
-	Sniffer      bool
-	Heartbeat    time.Duration // in seconds, for udp conn and control channel
-	ChannelSize  int
-	WebPort      int
+	BindAddr    string
+	Token       string
+	SnifferLog  string
+	Ports       []string
+	Sniffer     bool
+	Heartbeat   time.Duration // in seconds, for udp conn and control channel
+	ChannelSize int
+	WebPort     int
 }
 
 func NewUDPServer(parentCtx context.Context, config *UdpConfig, logger *logrus.Logger) *UdpTransport {
@@ -58,19 +56,13 @@ func NewUDPServer(parentCtx context.Context, config *UdpConfig, logger *logrus.L
 		activeMu:          sync.Mutex{},
 		reqNewConnChan:    make(chan struct{}, config.ChannelSize),
 		controlChannel:    nil, // will be set when a control connection is established
-		usageMonitor:      web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 		rtt:               0,
 	}
 
 	return server
 }
 func (s *UdpTransport) Start() {
-	s.config.TunnelStatus = "Disconnected (UDP)"
-
-	if s.config.WebPort > 0 {
-		go s.usageMonitor.Monitor()
-	}
-
+	stats.SetDown()
 	go s.channelHandshake()
 }
 
@@ -105,14 +97,14 @@ func (s *UdpTransport) Restart() {
 	// Re-initialize variables
 	s.tunnelChannel = make(chan *TunnelUDPConn, s.config.ChannelSize)
 	s.reqNewConnChan = make(chan struct{}, s.config.ChannelSize)
-	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.config.Sniffer, &s.config.TunnelStatus, s.logger)
-	s.config.TunnelStatus = ""
 	s.controlChannel = nil
 	s.activeConnections = map[string]*TunnelUDPConn{}
 	s.activeMu = sync.Mutex{}
 
 	// set the log level again
 	s.logger.SetLevel(level)
+
+	stats.SetDown()
 
 	go s.Start()
 }
@@ -182,6 +174,7 @@ loop:
 			s.controlChannel = conn
 
 			s.logger.Info("control channel successfully established.")
+			stats.SetUp()
 
 			break loop
 		}
@@ -653,7 +646,7 @@ func (s *UdpTransport) udpLocalCopy(from *LocalUDPConn, to *TunnelUDPConn) {
 			}
 
 			if s.config.Sniffer {
-				s.usageMonitor.AddOrUpdatePort(from.listener.LocalAddr().(*net.UDPAddr).Port, uint64(totalWritten))
+				stats.RecordPortUsage(from.listener.LocalAddr().(*net.UDPAddr).Port, uint64(totalWritten))
 			}
 
 			s.logger.Debugf("forwarded %d bytes from local connection %s to tunnel", packetSize, from.addr.String())
@@ -689,7 +682,7 @@ func (s *UdpTransport) udpTunnelCopy(from *TunnelUDPConn, to *LocalUDPConn) {
 			}
 
 			if s.config.Sniffer {
-				s.usageMonitor.AddOrUpdatePort(to.listener.LocalAddr().(*net.UDPAddr).Port, uint64(totalWritten))
+				stats.RecordPortUsage(from.listener.LocalAddr().(*net.UDPAddr).Port, uint64(totalWritten))
 			}
 
 			s.logger.Debugf("forwarded %d bytes from local connection %s to tunnel", packetSize, from.addr.String())

@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/musix/backhaul/internal/stats"
 	"github.com/musix/backhaul/internal/utils"
 	"github.com/musix/backhaul/internal/utils/handlers"
 	"github.com/musix/backhaul/internal/utils/network"
-	"github.com/musix/backhaul/internal/web"
 
 	"github.com/sirupsen/logrus"
 )
@@ -29,26 +29,24 @@ type TcpTransport struct {
 	reqNewConnChan chan struct{}
 	controlChannel net.Conn
 	restartMutex   sync.Mutex
-	usageMonitor   *web.Usage
 	rtt            int64 // in ms, for UDP
 }
 
 type TcpConfig struct {
-	BindAddr     string
-	Token        string
-	SnifferLog   string
-	TunnelStatus string
-	Ports        []string
-	Nodelay      bool
-	Sniffer      bool
-	KeepAlive    time.Duration
-	Heartbeat    time.Duration // in seconds
-	ChannelSize  int
-	WebPort      int
-	AcceptUDP    bool
-	MSS          int
-	SO_RCVBUF    int
-	SO_SNDBUF    int
+	BindAddr    string
+	Token       string
+	SnifferLog  string
+	Ports       []string
+	Nodelay     bool
+	Sniffer     bool
+	KeepAlive   time.Duration
+	Heartbeat   time.Duration // in seconds
+	ChannelSize int
+	WebPort     int
+	AcceptUDP   bool
+	MSS         int
+	SO_RCVBUF   int
+	SO_SNDBUF   int
 }
 
 func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.Logger) *TcpTransport {
@@ -66,7 +64,6 @@ func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		localChannel:   make(chan LocalTCPConn, config.ChannelSize),
 		reqNewConnChan: make(chan struct{}, config.ChannelSize),
 		controlChannel: nil, // will be set when a control connection is established
-		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 		rtt:            0,
 	}
 
@@ -74,18 +71,14 @@ func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 }
 
 func (s *TcpTransport) Start() {
-	s.config.TunnelStatus = "Disconnected (TCP)"
-
-	if s.config.WebPort > 0 {
-		go s.usageMonitor.Monitor()
-	}
+	stats.SetDown()
 
 	go s.tunnelListener()
 
 	s.channelHandshake()
 
 	if s.controlChannel != nil {
-		s.config.TunnelStatus = "Connected (TCP)"
+		stats.SetUp()
 
 		numCPU := runtime.NumCPU()
 		if numCPU > 4 {
@@ -134,12 +127,12 @@ func (s *TcpTransport) Restart() {
 	s.tunnelChannel = make(chan net.Conn, s.config.ChannelSize)
 	s.localChannel = make(chan LocalTCPConn, s.config.ChannelSize)
 	s.reqNewConnChan = make(chan struct{}, s.config.ChannelSize)
-	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.config.Sniffer, &s.config.TunnelStatus, s.logger)
-	s.config.TunnelStatus = ""
 	s.controlChannel = nil
 
 	// set the log level again
 	s.logger.SetLevel(level)
+
+	stats.SetDown()
 
 	go s.Start()
 }
@@ -553,7 +546,7 @@ func (s *TcpTransport) handleLoop() {
 					}
 
 					// Handle data exchange between connections
-					go handlers.TCPConnectionHandler(s.ctx, localConn.conn, tunnelConn, s.logger, s.usageMonitor, localConn.conn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
+					go handlers.TCPConnectionHandler(s.ctx, localConn.conn, tunnelConn, s.logger, localConn.conn.LocalAddr().(*net.TCPAddr).Port)
 					break loop
 
 				}

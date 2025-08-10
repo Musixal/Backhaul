@@ -129,4 +129,13 @@ func applyDefaults(cfg *config.Config) {
 	if cfg.Server.MuxCon < 1 {
 		cfg.Server.MuxCon = defaultMuxCon
 	}
+
+	// keep legacy handler
+	if len(cfg.Client.MetricCollectors) == 0 {
+		cfg.Client.MetricCollectors = append(cfg.Client.MetricCollectors, "default")
+	}
+
+	if len(cfg.Server.MetricCollectors) == 0 {
+		cfg.Server.MetricCollectors = append(cfg.Server.MetricCollectors, "default")
+	}
 }

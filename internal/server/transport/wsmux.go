@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/musix/backhaul/config" // for mode
+	"github.com/musix/backhaul/internal/stats"
 	"github.com/musix/backhaul/internal/utils"
 	"github.com/musix/backhaul/internal/utils/handlers"
-	"github.com/musix/backhaul/internal/web"
 	"github.com/xtaci/smux"
 
 	"github.com/gorilla/websocket"
@@ -33,7 +33,6 @@ type WsMuxTransport struct {
 	localChannel   chan LocalTCPConn
 	reqNewConnChan chan struct{}
 	controlChannel *websocket.Conn
-	usageMonitor   *web.Usage
 	restartMutex   sync.Mutex
 	streamCounter  int32
 	sessionCounter int32
@@ -45,7 +44,6 @@ type WsMuxConfig struct {
 	SnifferLog       string
 	TLSCertFile      string // Path to the TLS certificate file
 	TLSKeyFile       string // Path to the TLS key file
-	TunnelStatus     string
 	Ports            []string
 	Nodelay          bool
 	Sniffer          bool
@@ -87,19 +85,13 @@ func NewWSMuxServer(parentCtx context.Context, config *WsMuxConfig, logger *logr
 		streamCounter:  0,
 		sessionCounter: 0,
 		controlChannel: nil, // will be set when a control connection is established
-		usageMonitor:   web.NewDataStore(fmt.Sprintf(":%v", config.WebPort), ctx, config.SnifferLog, config.Sniffer, &config.TunnelStatus, logger),
 	}
 
 	return server
 }
 
 func (s *WsMuxTransport) Start() {
-	// for  webui
-	if s.config.WebPort > 0 {
-		go s.usageMonitor.Monitor()
-	}
-
-	s.config.TunnelStatus = fmt.Sprintf("Disconnected (%s)", s.config.Mode)
+	stats.SetDown()
 
 	go s.tunnelListener()
 
@@ -138,13 +130,13 @@ func (s *WsMuxTransport) Restart() {
 	s.localChannel = make(chan LocalTCPConn, s.config.ChannelSize)
 	s.reqNewConnChan = make(chan struct{}, s.config.ChannelSize)
 	s.controlChannel = nil
-	s.usageMonitor = web.NewDataStore(fmt.Sprintf(":%v", s.config.WebPort), ctx, s.config.SnifferLog, s.config.Sniffer, &s.config.TunnelStatus, s.logger)
-	s.config.TunnelStatus = ""
 	s.streamCounter = 0
 	s.sessionCounter = 0
 
 	// set the log level again
 	s.logger.SetLevel(level)
+
+	stats.SetDown()
 
 	go s.Start()
 }
@@ -283,8 +275,7 @@ func (s *WsMuxTransport) tunnelListener() {
 					go s.handleLoop()
 				}
 
-				s.config.TunnelStatus = fmt.Sprintf("Connected (%s)", s.config.Mode)
-
+				stats.SetUp()
 			} else if strings.HasPrefix(r.URL.Path, "/tunnel") {
 				session, err := smux.Client(conn.NetConn(), s.smuxConfig)
 				if err != nil {
@@ -567,7 +558,7 @@ func (s *WsMuxTransport) handleSession(session *smux.Session) {
 
 			// Handle data exchange between connections
 			go func() {
-				handlers.TCPConnectionHandler(s.ctx, stream, incomingConn.conn, s.logger, s.usageMonitor, incomingConn.conn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
+				handlers.TCPConnectionHandler(s.ctx, stream, incomingConn.conn, s.logger, incomingConn.conn.LocalAddr().(*net.TCPAddr).Port)
 				atomic.AddInt32(&s.streamCounter, -1)
 				<-counter // read signal from the channel
 			}()

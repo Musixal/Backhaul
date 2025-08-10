@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/musix/backhaul/internal/stats"
 	"github.com/musix/backhaul/internal/utils"
-	"github.com/musix/backhaul/internal/web"
 	"github.com/sirupsen/logrus"
 )
 
@@ -146,7 +146,7 @@ func (s *TcpTransport) handleUDPLoop(udpChan chan *LocalAcceptUDPConn, activeCon
 					}
 
 					// Handle data exchange between connections
-					go UDPConnectionHandler(localConn, tunnelConn, s.logger, s.usageMonitor, localConn.listener.LocalAddr().(*net.UDPAddr).Port, s.config.Sniffer, s.rtt, activeConnections, mu)
+					go UDPConnectionHandler(localConn, tunnelConn, s.logger, localConn.listener.LocalAddr().(*net.UDPAddr).Port, s.rtt, activeConnections, mu)
 
 					s.logger.Debugf("initiate new handler for connection %s with timestamp %d", localConn.clientAddr.String(), localConn.timeCreated)
 					break loop
@@ -156,7 +156,7 @@ func (s *TcpTransport) handleUDPLoop(udpChan chan *LocalAcceptUDPConn, activeCon
 	}
 }
 
-func UDPConnectionHandler(udp *LocalAcceptUDPConn, tcp net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool, rtt int64, activeConnections *map[string]*LocalAcceptUDPConn, mu *sync.Mutex) {
+func UDPConnectionHandler(udp *LocalAcceptUDPConn, tcp net.Conn, logger *logrus.Logger, remotePort int, rtt int64, activeConnections *map[string]*LocalAcceptUDPConn, mu *sync.Mutex) {
 	done := make(chan struct{})
 
 	if rtt == 0 {
@@ -167,12 +167,12 @@ func UDPConnectionHandler(udp *LocalAcceptUDPConn, tcp net.Conn, logger *logrus.
 	}
 
 	go func() {
-		udpToTCP(tcp, udp, logger, usage, remotePort, sniffer)
+		udpToTCP(tcp, udp, logger, remotePort)
 		tcp.Close()
 		done <- struct{}{}
 	}()
 
-	tcpToUDP(tcp, udp, logger, usage, remotePort, sniffer, rtt)
+	tcpToUDP(tcp, udp, logger, remotePort, rtt)
 	tcp.Close()
 
 	<-done
@@ -186,7 +186,7 @@ func UDPConnectionHandler(udp *LocalAcceptUDPConn, tcp net.Conn, logger *logrus.
 	mu.Unlock()
 }
 
-func udpToTCP(tcp net.Conn, udp *LocalAcceptUDPConn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
+func udpToTCP(tcp net.Conn, udp *LocalAcceptUDPConn, logger *logrus.Logger, remotePort int) {
 	// Create a header (2 bytes) to hold the size of the data
 	header := make([]byte, 2)
 
@@ -224,9 +224,7 @@ func udpToTCP(tcp net.Conn, udp *LocalAcceptUDPConn, logger *logrus.Logger, usag
 
 			logger.Tracef("received %d bytes, forwarded %d bytes from UDP to TCP", packetSize, totalWritten-2)
 
-			if sniffer {
-				usage.AddOrUpdatePort(remotePort, uint64(totalWritten))
-			}
+			stats.RecordPortUsage(remotePort, uint64(totalWritten))
 
 		case <-time.After(inactivityTimeout): // Timeout after 30 seconds of inactivity
 			logger.Debugf("connection with timestamp %d and address %s idle for 60 seconds, closing", udp.timeCreated, udp.clientAddr.String())
@@ -235,7 +233,7 @@ func udpToTCP(tcp net.Conn, udp *LocalAcceptUDPConn, logger *logrus.Logger, usag
 	}
 }
 
-func tcpToUDP(tcp net.Conn, udp *LocalAcceptUDPConn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool, rtt int64) {
+func tcpToUDP(tcp net.Conn, udp *LocalAcceptUDPConn, logger *logrus.Logger, remotePort int, rtt int64) {
 	buf := make([]byte, BufferSize)
 	lenBuf := make([]byte, 2)       // Buffer to store the 2-byte packet length
 	timestampBuf := make([]byte, 4) // Buffer for timestamp (4 bytes)
@@ -310,9 +308,7 @@ func tcpToUDP(tcp net.Conn, udp *LocalAcceptUDPConn, logger *logrus.Logger, usag
 				totalWritten += w
 			}
 
-			if sniffer {
-				usage.AddOrUpdatePort(remotePort, uint64(totalWritten))
-			}
+			stats.RecordPortUsage(remotePort, uint64(totalWritten))
 
 			logger.Tracef("read %d bytes from TCP, forwarded %d bytes to UDP", packetSize, totalWritten)
 		}

@@ -6,19 +6,19 @@ import (
 	"io"
 	"net"
 
-	"github.com/musix/backhaul/internal/web"
+	"github.com/musix/backhaul/internal/stats"
 	"github.com/sirupsen/logrus"
 )
 
-func TCPConnectionHandler(ctx context.Context, from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
+func TCPConnectionHandler(ctx context.Context, from net.Conn, to net.Conn, logger *logrus.Logger, remotePort int) {
 	done := make(chan struct{})
 
 	go func() {
 		defer close(done)
-		transferData(from, to, logger, usage, remotePort, sniffer)
+		transferData(from, to, logger, remotePort)
 	}()
 
-	transferData(to, from, logger, usage, remotePort, sniffer)
+	transferData(to, from, logger, remotePort)
 
 	select {
 	case <-ctx.Done():
@@ -30,7 +30,7 @@ func TCPConnectionHandler(ctx context.Context, from net.Conn, to net.Conn, logge
 }
 
 // Using direct Read and Write for transferring data
-func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
+func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, remotePort int) {
 	buf := make([]byte, 16*1024) // 16K
 	for {
 		// Read data from the source connection
@@ -65,9 +65,6 @@ func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.
 		}
 
 		logger.Tracef("read data: %d bytes, written data: %d bytes", r, totalWritten)
-		if sniffer {
-			usage.AddOrUpdatePort(remotePort, uint64(totalWritten))
-		}
+		stats.RecordPortUsage(remotePort, uint64(totalWritten))
 	}
-
 }
