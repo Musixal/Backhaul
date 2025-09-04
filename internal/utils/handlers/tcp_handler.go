@@ -10,8 +10,19 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func TCPConnectionHandler(ctx context.Context, from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
+func TCPConnectionHandler(ctx context.Context, proxyProtocol bool, from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
 	done := make(chan struct{})
+
+	// Write Proxy Protocol V2 Header
+	if proxyProtocol {
+		err := WriteProxyProtocol(from, to)
+		if err != nil {
+			logger.Error(err)
+			from.Close()
+			to.Close()
+			return
+		}
+	}
 
 	go func() {
 		defer close(done)

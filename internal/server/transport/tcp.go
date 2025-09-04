@@ -34,21 +34,22 @@ type TcpTransport struct {
 }
 
 type TcpConfig struct {
-	BindAddr     string
-	Token        string
-	SnifferLog   string
-	TunnelStatus string
-	Ports        []string
-	Nodelay      bool
-	Sniffer      bool
-	KeepAlive    time.Duration
-	Heartbeat    time.Duration // in seconds
-	ChannelSize  int
-	WebPort      int
-	AcceptUDP    bool
-	MSS          int
-	SO_RCVBUF    int
-	SO_SNDBUF    int
+	BindAddr      string
+	Token         string
+	SnifferLog    string
+	TunnelStatus  string
+	Ports         []string
+	Nodelay       bool
+	Sniffer       bool
+	KeepAlive     time.Duration
+	Heartbeat     time.Duration // in seconds
+	ChannelSize   int
+	WebPort       int
+	AcceptUDP     bool
+	MSS           int
+	SO_RCVBUF     int
+	SO_SNDBUF     int
+	ProxyProtocol bool
 }
 
 func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.Logger) *TcpTransport {
@@ -553,7 +554,7 @@ func (s *TcpTransport) handleLoop() {
 					}
 
 					// Handle data exchange between connections
-					go handlers.TCPConnectionHandler(s.ctx, localConn.conn, tunnelConn, s.logger, s.usageMonitor, localConn.conn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
+					go handlers.TCPConnectionHandler(s.ctx, s.config.ProxyProtocol, localConn.conn, tunnelConn, s.logger, s.usageMonitor, localConn.conn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
 					break loop
 
 				}

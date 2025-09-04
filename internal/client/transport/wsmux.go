@@ -378,5 +378,5 @@ func (c *WsMuxTransport) localDialer(stream *smux.Stream, remoteAddr string) {
 
 	c.logger.Debugf("connected to local address %s successfully", remoteAddr)
 
-	handlers.TCPConnectionHandler(c.ctx, stream, localConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffer)
+	handlers.TCPConnectionHandler(c.ctx, false, stream, localConnection, c.logger, c.usageMonitor, int(port), c.config.Sniffer)
 }

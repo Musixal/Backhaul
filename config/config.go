@@ -41,6 +41,7 @@ type ServerConfig struct {
 	MSS              int           `toml:"mss"`
 	SO_RCVBUF        int           `toml:"so_rcvbuf"`
 	SO_SNDBUF        int           `toml:"so_sndbuf"`
+	ProxyProtocol    bool          `toml:"proxy_protocol"`
 }
 
 // ClientConfig represents the configuration for the client.

@@ -42,20 +42,21 @@ func (s *Server) Start() {
 	switch s.config.Transport {
 	case config.TCP:
 		tcpConfig := &transport.TcpConfig{
-			BindAddr:    s.config.BindAddr,
-			Nodelay:     s.config.Nodelay,
-			KeepAlive:   time.Duration(s.config.Keepalive) * time.Second,
-			Heartbeat:   time.Duration(s.config.Heartbeat) * time.Second,
-			Token:       s.config.Token,
-			ChannelSize: s.config.ChannelSize,
-			Ports:       s.config.Ports,
-			Sniffer:     s.config.Sniffer,
-			WebPort:     s.config.WebPort,
-			SnifferLog:  s.config.SnifferLog,
-			AcceptUDP:   s.config.AcceptUDP,
-			MSS:         s.config.MSS,
-			SO_RCVBUF:   s.config.SO_RCVBUF,
-			SO_SNDBUF:   s.config.SO_SNDBUF,
+			BindAddr:      s.config.BindAddr,
+			Nodelay:       s.config.Nodelay,
+			KeepAlive:     time.Duration(s.config.Keepalive) * time.Second,
+			Heartbeat:     time.Duration(s.config.Heartbeat) * time.Second,
+			Token:         s.config.Token,
+			ChannelSize:   s.config.ChannelSize,
+			Ports:         s.config.Ports,
+			Sniffer:       s.config.Sniffer,
+			WebPort:       s.config.WebPort,
+			SnifferLog:    s.config.SnifferLog,
+			AcceptUDP:     s.config.AcceptUDP,
+			MSS:           s.config.MSS,
+			SO_RCVBUF:     s.config.SO_RCVBUF,
+			SO_SNDBUF:     s.config.SO_SNDBUF,
+			ProxyProtocol: s.config.ProxyProtocol,
 		}
 
 		tcpServer := transport.NewTCPServer(s.ctx, tcpConfig, s.logger)
@@ -81,6 +82,7 @@ func (s *Server) Start() {
 			MSS:              s.config.MSS,
 			SO_RCVBUF:        s.config.SO_RCVBUF,
 			SO_SNDBUF:        s.config.SO_SNDBUF,
+			ProxyProtocol:    s.config.ProxyProtocol,
 		}
 
 		tcpMuxServer := transport.NewTcpMuxServer(s.ctx, tcpMuxConfig, s.logger)
@@ -126,6 +128,7 @@ func (s *Server) Start() {
 			Mode:             s.config.Transport,
 			TLSCertFile:      s.config.TLSCertFile,
 			TLSKeyFile:       s.config.TLSKeyFile,
+			ProxyProtocol:    s.config.ProxyProtocol,
 		}
 
 		wsMuxServer := transport.NewWSMuxServer(s.ctx, wsMuxConfig, s.logger)

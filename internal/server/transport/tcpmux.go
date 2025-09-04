@@ -58,6 +58,7 @@ type TcpMuxConfig struct {
 	MSS              int
 	SO_RCVBUF        int
 	SO_SNDBUF        int
+	ProxyProtocol    bool
 }
 
 func NewTcpMuxServer(parentCtx context.Context, config *TcpMuxConfig, logger *logrus.Logger) *TcpMuxTransport {
@@ -605,7 +606,7 @@ func (s *TcpMuxTransport) handleSession(session *smux.Session) {
 
 			// Handle data exchange between connections
 			go func() {
-				handlers.TCPConnectionHandler(s.ctx, stream, incomingConn.conn, s.logger, s.usageMonitor, incomingConn.conn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
+				handlers.TCPConnectionHandler(s.ctx, s.config.ProxyProtocol, stream, incomingConn.conn, s.logger, s.usageMonitor, incomingConn.conn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
 				atomic.AddInt32(&s.streamCounter, -1)
 				<-counter // read signal from the channel
 			}()

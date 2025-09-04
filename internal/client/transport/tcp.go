@@ -390,5 +390,5 @@ func (c *TcpTransport) localDialer(tcpConn net.Conn, resolvedAddr string, port i
 
 	c.logger.Debugf("connected to local address %s successfully", resolvedAddr)
 
-	handlers.TCPConnectionHandler(c.ctx, tcpConn, localConnection, c.logger, c.usageMonitor, port, c.config.Sniffer)
+	handlers.TCPConnectionHandler(c.ctx, false, tcpConn, localConnection, c.logger, c.usageMonitor, port, c.config.Sniffer)
 }

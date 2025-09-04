@@ -59,7 +59,7 @@ type WsMuxConfig struct {
 	MaxStreamBuffer  int
 	WebPort          int
 	Mode             config.TransportType // ws or wss
-
+	ProxyProtocol    bool
 }
 
 func NewWSMuxServer(parentCtx context.Context, config *WsMuxConfig, logger *logrus.Logger) *WsMuxTransport {
@@ -567,7 +567,7 @@ func (s *WsMuxTransport) handleSession(session *smux.Session) {
 
 			// Handle data exchange between connections
 			go func() {
-				handlers.TCPConnectionHandler(s.ctx, stream, incomingConn.conn, s.logger, s.usageMonitor, incomingConn.conn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
+				handlers.TCPConnectionHandler(s.ctx, s.config.ProxyProtocol, stream, incomingConn.conn, s.logger, s.usageMonitor, incomingConn.conn.LocalAddr().(*net.TCPAddr).Port, s.config.Sniffer)
 				atomic.AddInt32(&s.streamCounter, -1)
 				<-counter // read signal from the channel
 			}()
