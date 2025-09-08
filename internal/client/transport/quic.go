@@ -32,6 +32,7 @@ type QuicTransport struct {
 	poolConnections int32
 	loadConnections int32
 	controlFlow     chan struct{}
+	streamRateLimit chan struct{} 
 }
 
 type QuicConfig struct {
@@ -64,6 +65,7 @@ func NewQUICClient(parentCtx context.Context, config *QuicConfig, logger *logrus
 		poolConnections: 0,
 		loadConnections: 0,
 		controlFlow:     make(chan struct{}, 100),
+		streamRateLimit: make(chan struct{}, 5), 
 	}
 
 	return client
@@ -195,8 +197,19 @@ func (c *QuicTransport) channelDialer() {
 }
 
 func (c *QuicTransport) poolMaintainer() {
+	
 	for i := 0; i < c.config.ConnPoolSize; i++ { 
-		go c.streamDialer()
+		select {
+		case c.streamRateLimit <- struct{}{}:
+			go func() {
+				defer func() { <-c.streamRateLimit }()
+				c.streamDialer()
+			}()
+		default:
+			c.logger.Debugf("rate limit reached during initial pool creation")
+			time.Sleep(100 * time.Millisecond) 
+			i-- 
+		}
 	}
 
 	
@@ -246,7 +259,15 @@ func (c *QuicTransport) poolMaintainer() {
 				newPoolSize++
 
 				
-				go c.streamDialer()
+				select {
+				case c.streamRateLimit <- struct{}{}:
+					go func() {
+						defer func() { <-c.streamRateLimit }()
+						c.streamDialer()
+					}()
+				default:
+					c.logger.Debugf("rate limit reached in pool optimization, skipping stream creation")
+				}
 			} else if float64(loadConnections+x) < float64(poolConnectionsAvg)*y && newPoolSize > c.config.ConnPoolSize {
 				c.logger.Debugf("decreasing pool size: %d -> %d, avg pool conn: %d, avg load conn: %d", newPoolSize, newPoolSize-1, poolConnectionsAvg, loadConnections)
 				newPoolSize--
@@ -293,12 +314,27 @@ func (c *QuicTransport) channelHandler() {
 			case utils.SG_Chan:
 				atomic.AddInt32(&c.loadConnections, 1)
 
+				
+				activeStreams := atomic.LoadInt32(&c.poolConnections)
+				if activeStreams >= int32(c.config.ConnPoolSize*2) {
+					c.logger.Debugf("too many active streams (%d), skipping new stream creation", activeStreams)
+					atomic.AddInt32(&c.loadConnections, -1)
+					continue
+				}
+
 				select {
 				case <-c.controlFlow: 
-
-				default:
+					
+				case c.streamRateLimit <- struct{}{}:
+					
 					c.logger.Debug("channel signal received, initiating stream dialer")
-					go c.streamDialer()
+					go func() {
+						defer func() { <-c.streamRateLimit }() 
+						c.streamDialer()
+					}()
+				default:
+					c.logger.Debugf("rate limit reached, skipping stream creation")
+					atomic.AddInt32(&c.loadConnections, -1)
 				}
 
 			case utils.SG_HB:
@@ -336,7 +372,7 @@ func (c *QuicTransport) streamDialer() {
 		return
 	}
 
-	// Send "ready for work" signal to server
+	
 	err = sendBinaryByte(stream, utils.SG_Chan)
 	if err != nil {
 		c.logger.Error("failed to send ready signal: ", err)
