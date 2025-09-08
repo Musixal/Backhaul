@@ -330,10 +330,17 @@ func (c *QuicTransport) channelHandler() {
 func (c *QuicTransport) streamDialer() {
 	c.logger.Debugf("initiating new QUIC stream to tunnel server")
 
-	
 	stream, err := c.quicConn.OpenStreamSync(c.ctx)
 	if err != nil {
 		c.logger.Error("failed to open QUIC stream: ", err)
+		return
+	}
+
+	// Send "ready for work" signal to server
+	err = sendBinaryByte(stream, utils.SG_Chan)
+	if err != nil {
+		c.logger.Error("failed to send ready signal: ", err)
+		stream.Close()
 		return
 	}
 
