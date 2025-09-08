@@ -15,6 +15,7 @@ Welcome to the **`Backhaul`** project! This project provides a high-performance 
       - [TCP Configuration](#tcp-configuration)
       - [TCP Multiplexing Configuration](#tcp-multiplexing-configuration)
       - [UDP Configuration](#udp-configuration)
+      - [QUIC Configuration](#quic-configuration)
       - [WebSocket Configuration](#websocket-configuration)
       - [Secure WebSocket Configuration](#secure-websocket-configuration)
       - [WS Multiplexing Configuration](#ws-multiplexing-configuration)
@@ -36,7 +37,7 @@ This project offers a robust reverse tunneling solution to overcome NAT and fire
 ## Features
 
 * **High Performance**: Optimized for handling massive concurrent connections efficiently.
-* **Protocol Flexibility**: Supports TCP, WebSocket (WS), and Secure WebSocket (WSS) transports.
+* **Protocol Flexibility**: Supports TCP, UDP, QUIC, WebSocket (WS), and Secure WebSocket (WSS) transports.
 * **UDP over TCP**: Implements UDP traffic encapsulation and forwarding over a TCP connection for reliable delivery with built-in congestion control.
 * **Multiplexing**: Enables multiple connections over a single transport with SMUX.
 * **NAT & Firewall Bypass**: Overcomes restrictions with reverse tunneling.
@@ -84,7 +85,7 @@ To start using the solution, you'll need to configure both server and client com
     ```toml
     [server]# Local, IRAN
     bind_addr = "0.0.0.0:3080"    # Address and port for the server to listen on (mandatory).
-    transport = "tcp"             # Protocol to use ("tcp", "tcpmux", "ws", "wss", "wsmux", "wssmux". mandatory).
+    transport = "tcp"             # Protocol to use ("tcp", "tcpmux", "ws", "wss", "wsmux", "wssmux", "udp", "quic". mandatory).
     accept_udp = false             # Enable transferring UDP connections over TCP transport. (optional, default: false)
     token = "your_token"          # Authentication token for secure communication (optional).
     keepalive_period = 75         # Interval in seconds to send keep-alive packets.(optional, default: 75s)
@@ -134,7 +135,7 @@ To start using the solution, you'll need to configure both server and client com
    [client]  # Behind NAT, firewall-blocked
    remote_addr = "0.0.0.0:3080"  # Server address and port (mandatory).
    edge_ip = "188.114.96.0"      # Edge IP used for CDN connection, specifically for WebSocket-based transports.(Optional, default none)
-   transport = "tcp"             # Protocol to use ("tcp", "tcpmux", "ws", "wss", "wsmux", "wssmux". mandatory).
+   transport = "tcp"             # Protocol to use ("tcp", "tcpmux", "ws", "wss", "wsmux", "wssmux", "udp", "quic". mandatory).
    token = "your_token"          # Authentication token for secure communication (optional).
    connection_pool = 8           # Number of pre-established connections.(optional, default: 8).
    aggressive_pool = false       # Enables aggressive connection pool management.(optional, default: false).
@@ -299,6 +300,58 @@ To start using the solution, you'll need to configure both server and client com
 
    ```
    
+#### QUIC Configuration
+* **Server**:
+
+   ```toml
+   [server]
+   bind_addr = "0.0.0.0:443"
+   transport = "quic"
+   token = "your_token"
+   heartbeat = 40 
+   channel_size = 2048
+   sniffer = false 
+   web_port = 2060
+   sniffer_log = "/root/backhaul.json"
+   log_level = "info"
+   ports = ["80", "8080", "443=127.0.0.1:8443"]
+   tls_cert = "/path/to/cert.pem"  # Optional: TLS certificate file
+   tls_key = "/path/to/key.pem"    # Optional: TLS private key file
+   ```
+
+* **Client**:
+
+   ```toml
+   [client]
+   remote_addr = "your-server.com:443"
+   transport = "quic"
+   token = "your_token" 
+   connection_pool = 8
+   aggressive_pool = false
+   retry_interval = 3
+   dial_timeout = 10
+   sniffer = false
+   web_port = 2060 
+   sniffer_log = "/root/backhaul.json"
+   log_level = "info"
+   ```
+
+   **QUIC Features:**
+   - Built on QUIC protocol for improved performance and reliability
+   - Automatic connection multiplexing over a single QUIC connection
+   - TLS 1.3 encryption by default
+   - Low latency and fast connection establishment (0-RTT support)
+   - Better handling of network changes and mobility
+   - Efficient use of network resources
+   - If no TLS certificates are provided, self-signed certificates are generated automatically
+
+   **Notes:**
+   - QUIC requires UDP connectivity between client and server
+   - Default port is 443 (HTTPS) but you can use any port
+   - QUIC provides better performance than TCP in high-latency or lossy networks
+   - Ideal for scenarios with frequent network changes or mobile connections
+
+   ```
 #### WebSocket Configuration
 * **Server**:
 

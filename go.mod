@@ -5,6 +5,7 @@ go 1.23.1
 require (
 	github.com/BurntSushi/toml v1.4.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/quic-go/quic-go v0.54.0
 	github.com/shirou/gopsutil/v4 v4.24.8
 	github.com/sirupsen/logrus v1.9.3
 	github.com/xtaci/smux v1.5.27
@@ -18,5 +19,11 @@ require (
 	github.com/tklauser/go-sysconf v0.3.14 // indirect
 	github.com/tklauser/numcpus v0.8.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
+	go.uber.org/mock v0.5.0 // indirect
+	golang.org/x/crypto v0.26.0 // indirect
+	golang.org/x/mod v0.18.0 // indirect
+	golang.org/x/net v0.28.0 // indirect
+	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.25.0 // indirect
+	golang.org/x/tools v0.22.0 // indirect
 )
