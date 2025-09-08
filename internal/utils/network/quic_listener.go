@@ -30,10 +30,11 @@ func QUICListen(address string, tlsCertFile, tlsKeyFile string) (*quic.Listener,
 	}
 
 	quicConfig := &quic.Config{
-		MaxIdleTimeout:        30 * time.Second,
+		MaxIdleTimeout:        60 * time.Second,
 		MaxIncomingStreams:    1000,
 		MaxIncomingUniStreams: 1000,
-		KeepAlivePeriod:       15 * time.Second,
+		KeepAlivePeriod:       10 * time.Second,
+		HandshakeIdleTimeout:  10 * time.Second,
 	}
 
 	listener, err := quic.ListenAddr(address, tlsConfig, quicConfig)

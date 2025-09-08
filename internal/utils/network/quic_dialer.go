@@ -43,10 +43,11 @@ func attemptQUICDialer(ctx context.Context, remoteAddress string, timeout time.D
 	}
 
 	quicConfig := &quic.Config{
-		MaxIdleTimeout:        30 * time.Second,
+		MaxIdleTimeout:        60 * time.Second,
 		MaxIncomingStreams:    1000,
 		MaxIncomingUniStreams: 1000,
-		KeepAlivePeriod:       15 * time.Second,
+		KeepAlivePeriod:       10 * time.Second,
+		HandshakeIdleTimeout:  10 * time.Second,
 	}
 
 	conn, err := quic.DialAddr(dialCtx, remoteAddress, tlsConfig, quicConfig)
