@@ -23,8 +23,8 @@ archives:
 
 release:
    github:
-    owner: Musixal
-    name: backhaul
+    owner: EbadiDev
+    name: Backhaul
 checksum:
   name_template: "checksums.txt"
 changelog:
