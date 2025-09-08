@@ -320,7 +320,9 @@ func (s *QuicTransport) handleQUICConnection(conn *quic.Conn) {
 				return
 			}
 
-			if isFirstStream && s.controlChannel == nil {
+			s.logger.Debugf(" STREAM RECEIVED: isFirstStream=%v, controlChannel=%v", isFirstStream, s.controlChannel != nil)
+
+			if isFirstStream {
 				
 				isFirstStream = false
 				select {
@@ -332,7 +334,7 @@ func (s *QuicTransport) handleQUICConnection(conn *quic.Conn) {
 				}
 			} else {
 				
-				s.logger.Debugf("accepted data stream from %s", conn.RemoteAddr().String())
+				s.logger.Debugf("RECEIVED DATA STREAM from %s", conn.RemoteAddr().String())
 				go s.handleDataStream(stream)
 			}
 		}
@@ -340,19 +342,8 @@ func (s *QuicTransport) handleQUICConnection(conn *quic.Conn) {
 }
 
 func (s *QuicTransport) handleDataStream(stream *quic.Stream) {
-	defer stream.Close()
-
+	s.logger.Debugf("handleDataStream called!")
 	
-	_, transport, err := receiveBinaryTransportString(stream)
-	if err != nil {
-		s.logger.Debugf("failed to receive remote address from data stream: %v", err)
-		return
-	}
-
-	if transport != utils.SG_TCP {
-		s.logger.Debugf("unsupported transport type received: %v", transport)
-		return
-	}
 
 	
 	select {
@@ -361,17 +352,30 @@ func (s *QuicTransport) handleDataStream(stream *quic.Stream) {
 		if time.Now().UnixMilli()-localConn.timeCreated > 3000 {
 			s.logger.Debugf("local connection timed out: %d ms", time.Now().UnixMilli()-localConn.timeCreated)
 			localConn.conn.Close()
+			stream.Close()
 			return
 		}
 
-		s.logger.Debugf("matching data stream with local connection for %s", localConn.remoteAddr)
+		s.logger.Debugf(" matching data stream with local connection for %s", localConn.remoteAddr)
+
+		
+		err := sendBinaryTransportString(stream, localConn.remoteAddr, utils.SG_TCP)
+		if err != nil {
+			s.logger.Errorf("failed to send remote address to client: %v", err)
+			localConn.conn.Close()
+			stream.Close()
+			return
+		}
+
+		s.logger.Debugf(" sent remote address %s to client, starting data forwarding", localConn.remoteAddr)
 
 		
 		go s.handleQUICStream(localConn.conn, stream, localConn.conn.LocalAddr().(*net.TCPAddr).Port)
 
 	default:
 		
-		s.logger.Debug("no waiting local connection for data stream")
+		s.logger.Debug(" no waiting local connection for data stream")
+		stream.Close()
 		return
 	}
 }
