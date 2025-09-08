@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -87,19 +86,10 @@ func (s *QuicTransport) Start() {
 	if s.controlChannel != nil {
 		s.config.TunnelStatus = "Connected (QUIC)"
 
-		numCPU := runtime.NumCPU()
-		if numCPU > 4 {
-			numCPU = 4 
-		}
-
 		go s.parsePortMappings()
 		go s.channelHandler()
 
-		s.logger.Infof("starting %d handle loops on each CPU thread", numCPU)
-
-		for i := 0; i < numCPU; i++ {
-			go s.handleLoop()
-		}
+		s.logger.Info("QUIC server ready - data streams will be handled directly")
 	}
 }
 
@@ -315,6 +305,9 @@ func (s *QuicTransport) acceptQUICConn(listener *quic.Listener) {
 func (s *QuicTransport) handleQUICConnection(conn *quic.Conn) {
 	defer conn.CloseWithError(0, "connection handler finished")
 
+	
+	isFirstStream := true
+
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -327,14 +320,59 @@ func (s *QuicTransport) handleQUICConnection(conn *quic.Conn) {
 				return
 			}
 
-			select {
-			case s.streamChannel <- stream:
-				s.logger.Debugf("accepted new QUIC stream from %s", conn.RemoteAddr().String())
-			default: 
-				s.logger.Warnf("stream channel is full, discarding QUIC stream from %s", conn.RemoteAddr().String())
-				stream.Close()
+			if isFirstStream && s.controlChannel == nil {
+				
+				isFirstStream = false
+				select {
+				case s.streamChannel <- stream:
+					s.logger.Debugf("accepted control channel stream from %s", conn.RemoteAddr().String())
+				default: 
+					s.logger.Warnf("stream channel is full, discarding control stream from %s", conn.RemoteAddr().String())
+					stream.Close()
+				}
+			} else {
+				
+				s.logger.Debugf("accepted data stream from %s", conn.RemoteAddr().String())
+				go s.handleDataStream(stream)
 			}
 		}
+	}
+}
+
+func (s *QuicTransport) handleDataStream(stream *quic.Stream) {
+	defer stream.Close()
+
+	
+	_, transport, err := receiveBinaryTransportString(stream)
+	if err != nil {
+		s.logger.Debugf("failed to receive remote address from data stream: %v", err)
+		return
+	}
+
+	if transport != utils.SG_TCP {
+		s.logger.Debugf("unsupported transport type received: %v", transport)
+		return
+	}
+
+	
+	select {
+	case localConn := <-s.localChannel:
+		
+		if time.Now().UnixMilli()-localConn.timeCreated > 3000 {
+			s.logger.Debugf("local connection timed out: %d ms", time.Now().UnixMilli()-localConn.timeCreated)
+			localConn.conn.Close()
+			return
+		}
+
+		s.logger.Debugf("matching data stream with local connection for %s", localConn.remoteAddr)
+
+		
+		go s.handleQUICStream(localConn.conn, stream, localConn.conn.LocalAddr().(*net.TCPAddr).Port)
+
+	default:
+		
+		s.logger.Debug("no waiting local connection for data stream")
+		return
 	}
 }
 
@@ -487,42 +525,6 @@ func (s *QuicTransport) acceptLocalConn(listener net.Listener, remoteAddr string
 		}
 	}
 }
-
-func (s *QuicTransport) handleLoop() {
-	for {
-		select {
-		case <-s.ctx.Done():
-			return
-		case localConn := <-s.localChannel:
-		loop:
-			for {
-				if time.Now().UnixMilli()-localConn.timeCreated > 3000 { 
-					s.logger.Debugf("timeouted local connection: %d ms", time.Now().UnixMilli()-localConn.timeCreated)
-					localConn.conn.Close()
-					break loop
-				}
-
-				select {
-				case <-s.ctx.Done():
-					return
-
-				case stream := <-s.streamChannel:
-					
-					if err := sendBinaryTransportString(stream, localConn.remoteAddr, utils.SG_TCP); err != nil {
-						s.logger.Errorf("%v", err)
-						stream.Close()
-						continue loop
-					}
-
-					
-					go s.handleQUICStream(localConn.conn, stream, localConn.conn.LocalAddr().(*net.TCPAddr).Port)
-					break loop
-				}
-			}
-		}
-	}
-}
-
 
 func (s *QuicTransport) handleQUICStream(localConn net.Conn, stream *quic.Stream, port int) {
 	defer stream.Close()
