@@ -149,6 +149,23 @@ func (s *Server) Start() {
 		udpServer := transport.NewUDPServer(s.ctx, udpConfig, s.logger)
 		go udpServer.Start()
 
+	case config.QUIC:
+		quicConfig := &transport.QuicConfig{
+			BindAddr:    s.config.BindAddr,
+			Heartbeat:   time.Duration(s.config.Heartbeat) * time.Second,
+			Token:       s.config.Token,
+			ChannelSize: s.config.ChannelSize,
+			Ports:       s.config.Ports,
+			Sniffer:     s.config.Sniffer,
+			WebPort:     s.config.WebPort,
+			SnifferLog:  s.config.SnifferLog,
+			TLSCertFile: s.config.TLSCertFile,
+			TLSKeyFile:  s.config.TLSKeyFile,
+		}
+
+		quicServer := transport.NewQUICServer(s.ctx, quicConfig, s.logger)
+		go quicServer.Start()
+
 	default:
 		s.logger.Fatal("invalid transport type: ", s.config.Transport)
 	}
