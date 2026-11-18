@@ -65,6 +65,9 @@ func Run(configPath string, ctx context.Context) {
 			}
 			network.SetDefaultSourceSelector(selector)
 			logger.Infof("outbound source selection enabled: %d address(es), strategy=%s", selector.Len(), selector.Strategy())
+		} else {
+			// Hot reload may have removed the setting; do not keep a stale selector.
+			network.SetDefaultSourceSelector(nil)
 		}
 
 		// Configure tunnel endpoint rotation before any dialer runs.
@@ -75,6 +78,8 @@ func Run(configPath string, ctx context.Context) {
 			}
 			network.SetDefaultEndpointSelector(selector)
 			logger.Infof("tunnel endpoint rotation enabled: %d address(es), strategy=%s", selector.Len(), selector.Strategy())
+		} else {
+			network.SetDefaultEndpointSelector(nil)
 		}
 
 		clnt := client.NewClient(&cfg.Client, ctx) // client
