@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -73,6 +75,8 @@ func (m *Usage) Monitor() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", m.handleIndex) // handle index
 	mux.HandleFunc("/stats", m.statsHandler)
+	mux.HandleFunc("/healthz", m.healthHandler)
+	mux.HandleFunc("/metrics", m.metricsHandler)
 	if m.sniffer {
 		mux.HandleFunc("/data", m.handleData) // New route for JSON data
 	}
@@ -156,6 +160,79 @@ func (m *Usage) statsHandler(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(stats); err != nil {
 		m.logger.Error("Error encoding JSON:", err)
 	}
+}
+
+func (m *Usage) healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok\n"))
+}
+
+// metricsHandler exposes a small Prometheus-compatible surface without
+// pulling in a metrics dependency. Counters are cumulative: the on-disk
+// sniffer log is merged with the in-memory delta.
+func (m *Usage) metricsHandler(w http.ResponseWriter, r *http.Request) {
+	usageByPort := make(map[int]uint64)
+	for _, usage := range m.getUsageFromFile() {
+		usageByPort[usage.Port] += usage.Usage
+	}
+	for _, usage := range m.snapshotUsageData() {
+		usageByPort[usage.Port] += usage.Usage
+	}
+
+	ports := make([]int, 0, len(usageByPort))
+	for port := range usageByPort {
+		ports = append(ports, port)
+	}
+	sort.Ints(ports)
+
+	var total uint64
+	var body strings.Builder
+	body.WriteString("# HELP backhaul_up Whether the Backhaul process is running.\n")
+	body.WriteString("# TYPE backhaul_up gauge\n")
+	body.WriteString("backhaul_up 1\n")
+
+	if m.tunnelStatus != nil {
+		body.WriteString("# HELP backhaul_tunnel_status Current tunnel status.\n")
+		body.WriteString("# TYPE backhaul_tunnel_status gauge\n")
+		body.WriteString("backhaul_tunnel_status{status=")
+		body.WriteString(strconv.Quote(*m.tunnelStatus))
+		body.WriteString("} 1\n")
+	}
+
+	body.WriteString("# HELP backhaul_port_traffic_bytes Total bytes forwarded per port.\n")
+	body.WriteString("# TYPE backhaul_port_traffic_bytes counter\n")
+	for _, port := range ports {
+		total += usageByPort[port]
+		body.WriteString("backhaul_port_traffic_bytes{port=")
+		body.WriteString(strconv.Quote(strconv.Itoa(port)))
+		body.WriteString("} ")
+		body.WriteString(strconv.FormatUint(usageByPort[port], 10))
+		body.WriteString("\n")
+	}
+
+	body.WriteString("# HELP backhaul_traffic_bytes_total Total bytes forwarded.\n")
+	body.WriteString("# TYPE backhaul_traffic_bytes_total counter\n")
+	body.WriteString("backhaul_traffic_bytes_total ")
+	body.WriteString(strconv.FormatUint(total, 10))
+	body.WriteString("\n")
+
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	_, _ = w.Write([]byte(body.String()))
+}
+
+func (m *Usage) snapshotUsageData() []PortUsage {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var usageData []PortUsage
+	m.dataStore.Range(func(_, value interface{}) bool {
+		if portUsage, ok := value.(PortUsage); ok {
+			usageData = append(usageData, portUsage)
+		}
+		return true
+	})
+	return usageData
 }
 
 func (m *Usage) AddOrUpdatePort(port int, usage uint64) {

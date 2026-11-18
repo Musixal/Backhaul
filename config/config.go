@@ -46,30 +46,35 @@ type ServerConfig struct {
 
 // ClientConfig represents the configuration for the client.
 type ClientConfig struct {
-	RemoteAddr       string        `toml:"remote_addr"`
-	Transport        TransportType `toml:"transport"`
-	Token            string        `toml:"token"`
-	ConnectionPool   int           `toml:"connection_pool"`
-	RetryInterval    int           `toml:"retry_interval"`
-	Nodelay          bool          `toml:"nodelay"`
-	Keepalive        int           `toml:"keepalive_period"`
-	LogLevel         string        `toml:"log_level"`
-	PPROF            bool          `toml:"pprof"`
-	MuxSession       int           `toml:"mux_session"`
-	MuxVersion       int           `toml:"mux_version"`
-	MaxFrameSize     int           `toml:"mux_framesize"`
-	MaxReceiveBuffer int           `toml:"mux_recievebuffer"`
-	MaxStreamBuffer  int           `toml:"mux_streambuffer"`
-	Sniffer          bool          `toml:"sniffer"`
-	WebPort          int           `toml:"web_port"`
-	SnifferLog       string        `toml:"sniffer_log"`
-	DialTimeout      int           `toml:"dial_timeout"`
-	AggressivePool   bool          `toml:"aggressive_pool"`
-	EdgeIP           string        `toml:"edge_ip"`
-	SkipOptz         bool          `toml:"skip_optz"`
-	MSS              int           `toml:"mss"`
-	SO_RCVBUF        int           `toml:"so_rcvbuf"`
-	SO_SNDBUF        int           `toml:"so_sndbuf"`
+	RemoteAddr         string        `toml:"remote_addr"`
+	RemoteAddrPool     []string      `toml:"remote_addr_pool"`
+	RemoteAddrStrategy string        `toml:"remote_addr_strategy"`
+	Transport          TransportType `toml:"transport"`
+	Token              string        `toml:"token"`
+	ConnectionPool     int           `toml:"connection_pool"`
+	RetryInterval      int           `toml:"retry_interval"`
+	Nodelay            bool          `toml:"nodelay"`
+	Keepalive          int           `toml:"keepalive_period"`
+	LogLevel           string        `toml:"log_level"`
+	PPROF              bool          `toml:"pprof"`
+	MuxSession         int           `toml:"mux_session"`
+	MuxVersion         int           `toml:"mux_version"`
+	MaxFrameSize       int           `toml:"mux_framesize"`
+	MaxReceiveBuffer   int           `toml:"mux_recievebuffer"`
+	MaxStreamBuffer    int           `toml:"mux_streambuffer"`
+	Sniffer            bool          `toml:"sniffer"`
+	WebPort            int           `toml:"web_port"`
+	SnifferLog         string        `toml:"sniffer_log"`
+	DialTimeout        int           `toml:"dial_timeout"`
+	AggressivePool     bool          `toml:"aggressive_pool"`
+	EdgeIP             string        `toml:"edge_ip"`
+	SendThrough        string        `toml:"send_through"`
+	SourceIPPool       []string      `toml:"source_ip_pool"`
+	SourceIPStrategy   string        `toml:"source_ip_strategy"`
+	SkipOptz           bool          `toml:"skip_optz"`
+	MSS                int           `toml:"mss"`
+	SO_RCVBUF          int           `toml:"so_rcvbuf"`
+	SO_SNDBUF          int           `toml:"so_sndbuf"`
 }
 
 // Config represents the complete configuration, including both server and client settings.

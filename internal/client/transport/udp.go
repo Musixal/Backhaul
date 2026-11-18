@@ -122,7 +122,7 @@ func (c *UdpTransport) channelDialer() {
 		case <-c.ctx.Done():
 			return
 		default:
-			tunnelTCPConn, err := network.TcpDialer(c.ctx, c.config.RemoteAddr, "", c.config.DialTimeOut, 30, true, 3, 0, 0, 0)
+			tunnelTCPConn, err := network.TcpDialer(c.ctx, network.PickRemoteAddr(c.config.RemoteAddr), "", c.config.DialTimeOut, 30, true, 3, 0, 0, 0)
 			if err != nil {
 				c.logger.Errorf("channel dialer: %v", err)
 				time.Sleep(c.config.RetryInterval)
@@ -316,13 +316,26 @@ func (c *UdpTransport) channelHandler() {
 func (c *UdpTransport) tunnelDialer() {
 	c.logger.Debugf("initiating new connection to tunnel server at %s", c.config.RemoteAddr)
 
-	remoteAddr, err := net.ResolveUDPAddr("udp", c.config.RemoteAddr)
+	remoteAddr, err := net.ResolveUDPAddr("udp", network.PickRemoteAddr(c.config.RemoteAddr))
 	if err != nil {
 		c.logger.Error("failed to resolve tunnel address:", err)
 		return
 	}
 
-	tunConn, err := net.DialUDP("udp", nil, remoteAddr)
+	var localAddr *net.UDPAddr
+	if source, err := network.PickSourceAddr(); err != nil {
+		c.logger.Error("failed to select source address:", err)
+		return
+	} else if source != "" {
+		ip := net.ParseIP(source)
+		if ip == nil {
+			c.logger.Errorf("invalid source address %q", source)
+			return
+		}
+		localAddr = &net.UDPAddr{IP: ip}
+	}
+
+	tunConn, err := net.DialUDP("udp", localAddr, remoteAddr)
 	if err != nil {
 		c.logger.Error("failed to connect to server:", err)
 		return
