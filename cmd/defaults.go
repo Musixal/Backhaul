@@ -135,4 +135,12 @@ func applyDefaults(cfg *config.Config) {
 	if cfg.Client.SourceIPStrategy == "" {
 		cfg.Client.SourceIPStrategy = defaultSourceStrategy
 	}
+
+	// Tunnel endpoint rotation
+	if cfg.Client.RemoteAddrStrategy == "" {
+		cfg.Client.RemoteAddrStrategy = defaultSourceStrategy
+	}
+	if cfg.Client.RemoteAddr == "" && len(cfg.Client.RemoteAddrPool) > 0 {
+		cfg.Client.RemoteAddr = cfg.Client.RemoteAddrPool[0]
+	}
 }

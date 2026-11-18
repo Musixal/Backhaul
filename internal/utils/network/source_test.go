@@ -23,7 +23,7 @@ func TestSourceSelectorSingleIP(t *testing.T) {
 }
 
 func TestSourceSelectorRoundRobin(t *testing.T) {
-	selector, err := NewSourceSelector("", []string{"203.0.113.10", "203.0.113.11"}, SourceRoundRobin.String())
+	selector, err := NewSourceSelector("", []string{"203.0.113.10", "203.0.113.11"}, string(SourceRoundRobin))
 	if err != nil {
 		t.Fatalf("NewSourceSelector() error = %v", err)
 	}
@@ -41,7 +41,7 @@ func TestSourceSelectorRoundRobin(t *testing.T) {
 }
 
 func TestSourceSelectorRandomStaysInPool(t *testing.T) {
-	selector, err := NewSourceSelector("", []string{"203.0.113.10", "203.0.113.11"}, SourceRandom.String())
+	selector, err := NewSourceSelector("", []string{"203.0.113.10", "203.0.113.11"}, string(SourceRandom))
 	if err != nil {
 		t.Fatalf("NewSourceSelector() error = %v", err)
 	}
@@ -59,7 +59,7 @@ func TestSourceSelectorRandomStaysInPool(t *testing.T) {
 }
 
 func TestSourceSelectorIPv4CIDR(t *testing.T) {
-	selector, err := NewSourceSelector("203.0.113.0/24", nil, SourceRandom.String())
+	selector, err := NewSourceSelector("203.0.113.0/24", nil, string(SourceRandom))
 	if err != nil {
 		t.Fatalf("NewSourceSelector() error = %v", err)
 	}
@@ -84,7 +84,7 @@ func TestSourceSelectorIPv4CIDR(t *testing.T) {
 }
 
 func TestSourceSelectorIPv6CIDR(t *testing.T) {
-	selector, err := NewSourceSelector("2001:db8:1:2::/64", nil, SourceRandom.String())
+	selector, err := NewSourceSelector("2001:db8:1:2::/64", nil, string(SourceRandom))
 	if err != nil {
 		t.Fatalf("NewSourceSelector() error = %v", err)
 	}
@@ -125,8 +125,4 @@ func TestSourceSelectorRejectsInvalidInput(t *testing.T) {
 			}
 		})
 	}
-}
-
-func (s SourceStrategy) String() string {
-	return string(s)
 }

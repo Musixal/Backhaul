@@ -67,6 +67,16 @@ func Run(configPath string, ctx context.Context) {
 			logger.Infof("outbound source selection enabled: %d address(es), strategy=%s", selector.Len(), selector.Strategy())
 		}
 
+		// Configure tunnel endpoint rotation before any dialer runs.
+		if len(cfg.Client.RemoteAddrPool) > 0 {
+			selector, err := network.NewEndpointSelector(cfg.Client.RemoteAddrPool, cfg.Client.RemoteAddrStrategy)
+			if err != nil {
+				logger.Fatalf("invalid remote address pool: %v", err)
+			}
+			network.SetDefaultEndpointSelector(selector)
+			logger.Infof("tunnel endpoint rotation enabled: %d address(es), strategy=%s", selector.Len(), selector.Strategy())
+		}
+
 		clnt := client.NewClient(&cfg.Client, ctx) // client
 		go clnt.Start()
 

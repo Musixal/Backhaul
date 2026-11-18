@@ -49,7 +49,7 @@ func TestTcpDialerRotatesSourceIPs(t *testing.T) {
 	}
 	defer listener.Close()
 
-	selector, err := NewSourceSelector("", []string{"127.0.0.2", "127.0.0.3"}, SourceRoundRobin.String())
+	selector, err := NewSourceSelector("", []string{"127.0.0.2", "127.0.0.3"}, string(SourceRoundRobin))
 	if err != nil {
 		t.Fatalf("NewSourceSelector() error = %v", err)
 	}

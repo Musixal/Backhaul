@@ -159,6 +159,10 @@ To start using the solution, you'll need to configure both server and client com
    send_through = "203.0.113.10"       # Bind outbound connections to this local IP.
    source_ip_pool = ["203.0.113.10", "203.0.113.11"]  # Rotate across multiple local IPs.
    source_ip_strategy = "round_robin"  # "round_robin" or "random".
+
+   # Tunnel endpoint rotation (optional). Use when the server has multiple IPs.
+   remote_addr_pool = ["203.0.113.20:8443", "203.0.113.21:8443"]
+   remote_addr_strategy = "round_robin" # "round_robin" or "random".
    ```
 
    To start the `client`:
@@ -190,6 +194,28 @@ source_ip_strategy = "round_robin" # or "random"
 The selected source address applies to tunnel connections and to local service
 dials made by the client. Addresses must exist on the host. For IPv6 prefixes,
 make sure the kernel and routing setup allow binding to the whole prefix.
+
+#### Tunnel endpoint rotation
+
+If the tunnel server has multiple public IPs, the client can rotate across them
+instead of pinning every connection to one address. This spreads control and
+data connections across the pool and avoids overloading a single IP.
+
+```toml
+[client]
+remote_addr_pool = [
+  "203.0.113.20:8443",
+  "203.0.113.21:8443",
+  "203.0.113.22:8443",
+]
+remote_addr_strategy = "round_robin" # or "random"
+```
+
+Every new tunnel connection picks the next endpoint. `remote_addr` remains the
+fallback and is used when no pool is configured. All endpoints must point to the
+same Backhaul server process (for example, the same `bind_addr = "0.0.0.0:8443"`
+listener on several IPs), because the control channel and data connections must
+share server state.
 
 ### Detailed Configuration
 #### TCP Configuration

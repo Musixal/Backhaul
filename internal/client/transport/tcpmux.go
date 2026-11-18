@@ -145,7 +145,7 @@ func (c *TcpMuxTransport) channelDialer() {
 		case <-c.ctx.Done():
 			return
 		default:
-			tunnelConn, err := network.TcpDialer(c.ctx, c.config.RemoteAddr, "", c.config.DialTimeOut, c.config.KeepAlive, true, 3, 0, 0, 0)
+			tunnelConn, err := network.TcpDialer(c.ctx, network.PickRemoteAddr(c.config.RemoteAddr), "", c.config.DialTimeOut, c.config.KeepAlive, true, 3, 0, 0, 0)
 			if err != nil {
 				c.logger.Errorf("channel dialer: %v", err)
 				time.Sleep(c.config.RetryInterval)
@@ -332,7 +332,7 @@ func (c *TcpMuxTransport) tunnelDialer() {
 	c.logger.Debugf("initiating new tunnel connection to address %s", c.config.RemoteAddr)
 
 	// Dial to the tunnel server
-	tunnelConn, err := network.TcpDialer(c.ctx, c.config.RemoteAddr, "", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 3, c.config.SO_RCVBUF, c.config.SO_SNDBUF, c.config.MSS)
+	tunnelConn, err := network.TcpDialer(c.ctx, network.PickRemoteAddr(c.config.RemoteAddr), "", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 3, c.config.SO_RCVBUF, c.config.SO_SNDBUF, c.config.MSS)
 	if err != nil {
 		c.logger.Errorf("tunnel server dialer: %v", err)
 

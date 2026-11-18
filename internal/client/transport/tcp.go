@@ -129,7 +129,7 @@ func (c *TcpTransport) channelDialer() {
 			return
 		default:
 			//set default behaviour of control channel to nodelay, also using default buffer parameters
-			tunnelTCPConn, err := network.TcpDialer(c.ctx, c.config.RemoteAddr, "", c.config.DialTimeOut, c.config.KeepAlive, true, 3, 0, 0, 0)
+			tunnelTCPConn, err := network.TcpDialer(c.ctx, network.PickRemoteAddr(c.config.RemoteAddr), "", c.config.DialTimeOut, c.config.KeepAlive, true, 3, 0, 0, 0)
 			if err != nil {
 				c.logger.Errorf("channel dialer: %v", err)
 				time.Sleep(c.config.RetryInterval)
@@ -324,7 +324,7 @@ func (c *TcpTransport) tunnelDialer() {
 	c.logger.Debugf("initiating new connection to tunnel server at %s", c.config.RemoteAddr)
 
 	// Dial to the tunnel server
-	tcpConn, err := network.TcpDialer(c.ctx, c.config.RemoteAddr, "", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 3, c.config.SO_RCVBUF, c.config.SO_SNDBUF, c.config.MSS)
+	tcpConn, err := network.TcpDialer(c.ctx, network.PickRemoteAddr(c.config.RemoteAddr), "", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 3, c.config.SO_RCVBUF, c.config.SO_SNDBUF, c.config.MSS)
 	if err != nil {
 		c.logger.Error("tunnel server dialer: ", err)
 
