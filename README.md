@@ -217,6 +217,23 @@ same Backhaul server process (for example, the same `bind_addr = "0.0.0.0:8443"`
 listener on several IPs), because the control channel and data connections must
 share server state.
 
+#### Health and metrics
+
+When `web_port` is enabled, Backhaul exposes:
+
+- `GET /healthz` — returns `200 ok` while the process is running.
+- `GET /metrics` — Prometheus text format with `backhaul_up`,
+  `backhaul_tunnel_status`, per-port traffic counters, and a total traffic
+  counter.
+
+```toml
+[server]
+web_port = 2060
+```
+
+The endpoints share the existing dashboard listener, so bind it to a private
+interface or firewall it if the host is public.
+
 ### Detailed Configuration
 #### TCP Configuration
 * **Server**:
