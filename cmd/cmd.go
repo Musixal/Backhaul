@@ -8,6 +8,7 @@ import (
 
 	"github.com/musix/backhaul/internal/server"
 	"github.com/musix/backhaul/internal/utils"
+	"github.com/musix/backhaul/internal/utils/network"
 
 	"github.com/BurntSushi/toml"
 )
@@ -54,6 +55,16 @@ func Run(configPath string, ctx context.Context) {
 		// Apply temporary TCP optimizations at startup
 		if !cfg.Client.SkipOptz {
 			ApplyTCPTuning()
+		}
+
+		// Configure outbound source-IP selection before any dialer runs.
+		if cfg.Client.SendThrough != "" || len(cfg.Client.SourceIPPool) > 0 {
+			selector, err := network.NewSourceSelector(cfg.Client.SendThrough, cfg.Client.SourceIPPool, cfg.Client.SourceIPStrategy)
+			if err != nil {
+				logger.Fatalf("invalid outbound source configuration: %v", err)
+			}
+			network.SetDefaultSourceSelector(selector)
+			logger.Infof("outbound source selection enabled: %d address(es), strategy=%s", selector.Len(), selector.Strategy())
 		}
 
 		clnt := client.NewClient(&cfg.Client, ctx) // client

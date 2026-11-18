@@ -16,8 +16,18 @@ func TcpDialer(ctx context.Context, remoteAddress string, localSrc string, timeo
 	backoff := 1 * time.Second // Initial backoff duration
 
 	for i := 0; i < retries; i++ {
+		// Pick a fresh source address for every attempt. This is what makes
+		// rotation and CIDR randomization effective across reconnects.
+		src := localSrc
+		if src == "" {
+			src, err = pickDefaultSource()
+			if err != nil {
+				return nil, err
+			}
+		}
+
 		// Attempt to establish a TCP connection
-		tcpConn, err = attemptTcpDialer(ctx, remoteAddress, localSrc, timeout, keepAlive, nodelay, SO_RCVBUF, SO_SNDBUF, mss)
+		tcpConn, err = attemptTcpDialer(ctx, remoteAddress, src, timeout, keepAlive, nodelay, SO_RCVBUF, SO_SNDBUF, mss)
 		if err == nil {
 			// Connection successful
 			return tcpConn, nil
@@ -57,6 +67,11 @@ func attemptTcpDialer(
 
 	var localTCPAddr *net.TCPAddr
 	if localSrc != "" {
+		// A bare source IP is the common case; add an ephemeral port so it
+		// can be resolved as a TCP address. IPv6 literals are handled too.
+		if net.ParseIP(localSrc) != nil {
+			localSrc = net.JoinHostPort(localSrc, "0")
+		}
 		localTCPAddr, err = net.ResolveTCPAddr("tcp", localSrc)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve local address: %v", err)

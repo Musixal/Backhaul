@@ -23,6 +23,7 @@ const ( // Default values
 	defaultMaxStreamBuffer  = 65536   // 256KB
 	defaultSnifferLog       = "backhaul.json"
 	defaultMuxCon           = 8
+	defaultSourceStrategy   = "round_robin"
 )
 
 func applyDefaults(cfg *config.Config) {
@@ -128,5 +129,10 @@ func applyDefaults(cfg *config.Config) {
 	// Mux concurrancy
 	if cfg.Server.MuxCon < 1 {
 		cfg.Server.MuxCon = defaultMuxCon
+	}
+
+	// Outbound source-IP selection
+	if cfg.Client.SourceIPStrategy == "" {
+		cfg.Client.SourceIPStrategy = defaultSourceStrategy
 	}
 }

@@ -154,6 +154,11 @@ To start using the solution, you'll need to configure both server and client com
    mss = 1360                    # TCP/TCPMux: Maximum Segment Size in bytes; controls max TCP payload size to avoid fragmentation. (default: system-defined)
    so_rcvbuf = 1048576           # TCP/TCPMux: Socket receive buffer size (bytes); larger buffer allows higher throughput on receive side. (default: system-defined)
    so_sndbuf = 4194304           # TCP/TCPMux: Socket send buffer size (bytes); controls send queue size to manage outgoing data flow. (default: system-defined)
+
+   # Outbound source IP selection (optional).
+   send_through = "203.0.113.10"       # Bind outbound connections to this local IP.
+   source_ip_pool = ["203.0.113.10", "203.0.113.11"]  # Rotate across multiple local IPs.
+   source_ip_strategy = "round_robin"  # "round_robin" or "random".
    ```
 
    To start the `client`:
@@ -161,6 +166,30 @@ To start using the solution, you'll need to configure both server and client com
    ```sh
    ./backhaul -c config.toml
    ```
+
+#### Outbound source IP selection
+
+Backhaul can bind outbound client connections to a specific local IP, rotate
+across a pool of local IPs, or pick a random address from a CIDR block. This is
+useful on hosts with multiple public IPs, IPv6 prefixes, or multiple upstream
+interfaces.
+
+```toml
+[client]
+# Single source address.
+send_through = "203.0.113.10"
+
+# Or a pool. Every new outbound connection uses the next address.
+source_ip_pool = ["203.0.113.10", "203.0.113.11", "203.0.113.12"]
+source_ip_strategy = "round_robin" # or "random"
+
+# CIDR is also supported. A random address inside the block is used per dial.
+# send_through = "2001:db8:1234::/64"
+```
+
+The selected source address applies to tunnel connections and to local service
+dials made by the client. Addresses must exist on the host. For IPv6 prefixes,
+make sure the kernel and routing setup allow binding to the whole prefix.
 
 ### Detailed Configuration
 #### TCP Configuration

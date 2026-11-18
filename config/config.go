@@ -66,6 +66,9 @@ type ClientConfig struct {
 	DialTimeout      int           `toml:"dial_timeout"`
 	AggressivePool   bool          `toml:"aggressive_pool"`
 	EdgeIP           string        `toml:"edge_ip"`
+	SendThrough      string        `toml:"send_through"`
+	SourceIPPool     []string      `toml:"source_ip_pool"`
+	SourceIPStrategy string        `toml:"source_ip_strategy"`
 	SkipOptz         bool          `toml:"skip_optz"`
 	MSS              int           `toml:"mss"`
 	SO_RCVBUF        int           `toml:"so_rcvbuf"`
