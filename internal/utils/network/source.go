@@ -203,3 +203,10 @@ func pickDefaultSource() (string, error) {
 	}
 	return selector.Pick()
 }
+
+// PickSourceAddr returns the next process-wide source address, or an empty
+// string when no selector is configured. It is used by UDP dialers, which do
+// not go through TcpDialer.
+func PickSourceAddr() (string, error) {
+	return pickDefaultSource()
+}

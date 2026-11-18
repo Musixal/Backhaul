@@ -322,7 +322,20 @@ func (c *UdpTransport) tunnelDialer() {
 		return
 	}
 
-	tunConn, err := net.DialUDP("udp", nil, remoteAddr)
+	var localAddr *net.UDPAddr
+	if source, err := network.PickSourceAddr(); err != nil {
+		c.logger.Error("failed to select source address:", err)
+		return
+	} else if source != "" {
+		ip := net.ParseIP(source)
+		if ip == nil {
+			c.logger.Errorf("invalid source address %q", source)
+			return
+		}
+		localAddr = &net.UDPAddr{IP: ip}
+	}
+
+	tunConn, err := net.DialUDP("udp", localAddr, remoteAddr)
 	if err != nil {
 		c.logger.Error("failed to connect to server:", err)
 		return
